@@ -2,7 +2,7 @@
 data/
 logs/
 models/
-!/src/models/
+!/src/model
 results/
 
 # Environment directories
