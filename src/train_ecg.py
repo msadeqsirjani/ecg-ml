@@ -8,8 +8,8 @@ from datetime import datetime
 import json
 import matplotlib.pyplot as plt
 
-from models.ecg_model import create_ecg_model
-from models.micro_ecg_model import (
+from model.ecg_model import create_ecg_model
+from model.micro_ecg_model import (
     create_micro_ecg_model,
 )
 from evaluation.metrics import ECGEvaluator
