@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 import wfdb
@@ -9,6 +10,7 @@ import logging
 from datetime import datetime
 import sys
 from sklearn.preprocessing import MultiLabelBinarizer
+from tqdm import tqdm
 
 
 class ECGPreprocessor:
@@ -133,9 +135,7 @@ class ECGPreprocessor:
             total_files = len(df)
             expected_shape = None
 
-            for idx, filename in enumerate(df[filename_col], 1):
-                if idx % 1000 == 0:
-                    self.logger.info(f"Loading file {idx}/{total_files}")
+            for idx, filename in enumerate(tqdm(df[filename_col], desc="Loading ECG files"), 1):
                 try:
                     signal, _ = wfdb.rdsamp(str(self.data_path / filename))
 
@@ -377,7 +377,7 @@ class ECGPreprocessor:
             Y["diagnostic_superclass"] = Y.scp_codes.apply(self.aggregate_diagnostic)
 
             # Process each lead configuration
-            for lead_config in self.LEAD_CONFIGS.keys():
+            for lead_config in tqdm(self.LEAD_CONFIGS.keys(), desc="Processing lead configurations"):
                 self.process_lead_configuration(X, Y, lead_config)
 
             self.logger.info("Preprocessing completed for all lead configurations!")
@@ -390,6 +390,10 @@ class ECGPreprocessor:
 def main():
     """Main function to process all classification types using the same raw data."""
     try:
+        
+        data_path = Path("data/raw/ptb-xl-missing-values")
+        os.makedirs(data_path, exist_ok=True)
+        
         # Initialize first preprocessor to load data
         base_preprocessor = ECGPreprocessor(
             data_path="data/raw/ptb-xl-missing-values",

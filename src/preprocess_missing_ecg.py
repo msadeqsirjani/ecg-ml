@@ -8,6 +8,7 @@ import ast
 import sys
 import shutil
 import os
+from tqdm import tqdm
 
 
 class MissingValueProcessor:
@@ -209,7 +210,7 @@ class MissingValueProcessor:
             sampling_rates = [100, 500]
 
             self.logger.info(f"Processing {total_files} signals...")
-            for idx, (ecg_id, row) in enumerate(Y.iterrows(), 1):
+            for idx, (ecg_id, row) in enumerate(tqdm(Y.iterrows(), desc="Processing ECG signals", total=total_files), 1):
                 try:
                     # Process both sampling rates
                     for sampling_rate in sampling_rates:
@@ -262,9 +263,6 @@ class MissingValueProcessor:
                                     "duration": duration,
                                 }
                             )
-
-                    if idx % 100 == 0:
-                        self.logger.info(f"Processed {idx}/{total_files} signals")
 
                 except Exception as e:
                     self.logger.error(f"Error processing signal {ecg_id}: {str(e)}")
