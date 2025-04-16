@@ -8,8 +8,8 @@ from datetime import datetime
 import json
 import matplotlib.pyplot as plt
 
-from model.ecg_model import create_ecg_model
-from model.micro_ecg_model import (
+from models.ecg_model import create_ecg_model
+from models.micro_ecg_model import (
     create_micro_ecg_model,
 )
 from evaluation.metrics import ECGEvaluator
@@ -536,7 +536,7 @@ def main():
                     )
 
                     models_dir = (
-                        Path("models") / classification_type / lead_config / model_type
+                        Path("models", "original") / classification_type / lead_config / model_type
                     )
                     models_dir.mkdir(parents=True, exist_ok=True)
 
