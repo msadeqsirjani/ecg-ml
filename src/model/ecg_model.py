@@ -18,7 +18,7 @@ import tensorflow as tf
 
 def create_ecg_model(input_shape: tuple, num_classes: int) -> Model:
     """
-    Create the ECG classification model architecture.
+    Create the ECG classification model architecture with enhanced regularization.
 
     Args:
         input_shape: Tuple of (num_leads, sequence_length, channels)
@@ -90,19 +90,20 @@ def create_ecg_model(input_shape: tuple, num_classes: int) -> Model:
     X = BatchNormalization()(conv_final)
     X = ReLU()(X)
     X = GlobalAveragePooling2D()(X)
+    X = Dropout(rate=0.2)(X)
 
     X = Flatten()(X)
 
-    # Dense layers
-    X = Dense(units=128, kernel_regularizer=tf.keras.regularizers.L2(0.005))(X)
+    # Dense layers with stronger regularization
+    X = Dense(units=128, kernel_regularizer=tf.keras.regularizers.L2(0.01))(X)
     X = BatchNormalization()(X)
     X = ReLU()(X)
-    X = Dropout(rate=0.1)(X)
+    X = Dropout(rate=0.3)(X)
 
-    X = Dense(units=64, kernel_regularizer=tf.keras.regularizers.L2(0.009))(X)
+    X = Dense(units=64, kernel_regularizer=tf.keras.regularizers.L2(0.015))(X)
     X = BatchNormalization()(X)
     X = ReLU()(X)
-    X = Dropout(rate=0.15)(X)
+    X = Dropout(rate=0.3)(X)
 
     output = Dense(num_classes, activation="sigmoid")(X)
 

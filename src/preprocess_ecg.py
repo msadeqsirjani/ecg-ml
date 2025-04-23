@@ -338,13 +338,6 @@ class ECGPreprocessor:
             # Save metadata
             self.save_metadata(lead_config, X_train.shape)
 
-            self.logger.info(f"Completed processing {lead_config}")
-            self.logger.info(f"\033[95mFinal Shapes:\033[0m")
-            self.logger.info(f"\033[95m- Training data: {X_train.shape}\033[0m")
-            self.logger.info(f"\033[95m- Test data: {X_test.shape}\033[0m")
-            self.logger.info(f"\033[95m- Training labels: {y_train.shape}\033[0m")
-            self.logger.info(f"\033[95m- Test labels: {y_test.shape}\033[0m")
-
         except Exception as e:
             self.logger.error(f"Failed to process {lead_config}: {str(e)}")
             raise

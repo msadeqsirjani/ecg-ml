@@ -8,8 +8,8 @@ from datetime import datetime
 import json
 import matplotlib.pyplot as plt
 
-from models.ecg_model import create_ecg_model
-from models.micro_ecg_model import (
+from model.ecg_model import create_ecg_model
+from model.micro_ecg_model import (
     create_micro_ecg_model,
 )
 from evaluation.metrics import ECGEvaluator
@@ -62,7 +62,7 @@ def load_data(data_path: str, classification_type: str, lead_config: str) -> tup
     """Load and preprocess data."""
     data_path = Path(data_path)
     processed_path = (
-        data_path / "processed" / "ptb-xl-1.0.3" / classification_type / lead_config
+        data_path / "processed" / "ptb-xl-missing-values" / classification_type / lead_config
     )
 
     # Load data
@@ -115,10 +115,8 @@ def train_model(
 
     # Callbacks
     callbacks_list = [
-        callbacks.EarlyStopping(
-            monitor="val_loss", patience=6, restore_best_weights=True
-        ),
-        callbacks.ReduceLROnPlateau(monitor="val_loss", patience=3),
+        callbacks.EarlyStopping(monitor="val_loss", patience=6, restore_best_weights=True),
+        callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6),
     ]
 
     # Train model
@@ -252,192 +250,6 @@ def save_model_info(model: tf.keras.Model, model_dir: Path, logger: logging.Logg
         except Exception as e:
             logger.error(f"Failed to save model architecture: {str(e)}")
 
-        # Get model summary
-        logger.info("Saving model summary...")
-        try:
-            string_list = []
-            model.summary(line_length=80, print_fn=lambda x: string_list.append(x))
-            with open(model_dir / "model_summary.txt", "w") as f:
-                f.write("\n".join(string_list))
-            logger.info("Saved model summary")
-        except Exception as e:
-            logger.error(f"Failed to save model summary: {str(e)}")
-
-        # Save weights and size info
-        logger.info("Calculating model size information...")
-        try:
-            weights_info = []
-            total_params = 0
-            trainable_params = 0
-            non_trainable_params = 0
-            layer_sizes = {}
-
-            for layer in model.layers:
-                layer_info = {
-                    "name": layer.name,
-                    "type": layer.__class__.__name__,
-                    "trainable": layer.trainable,
-                    "weights": [],
-                }
-
-                layer_params = 0
-                layer_size = 0
-
-                for weight in layer.weights:
-                    # Make sure weight is actually a weight tensor and not a string
-                    if isinstance(weight, str):
-                        logger.warning(f"Skipping invalid weight object (string) in layer {layer.name}")
-                        continue
-                        
-                    try:
-                        param_count = np.prod(weight.shape.as_list())
-                        size_bytes = param_count * 4  # Assuming float32 (4 bytes)
-
-                        weight_info = {
-                            "name": weight.name if hasattr(weight, 'name') else "unknown",
-                            "shape": weight.shape.as_list() if hasattr(weight, 'shape') else [],
-                            "dtype": weight.dtype.name if hasattr(weight, 'dtype') else "unknown",
-                            "parameters": int(param_count),
-                            "size_bytes": size_bytes,
-                            "size_mb": size_bytes / (1024 * 1024),
-                        }
-
-                        layer_params += param_count
-                        layer_size += size_bytes
-
-                        if hasattr(weight, 'name') and "trainable" in weight.name or layer.trainable:
-                            trainable_params += param_count
-                        else:
-                            non_trainable_params += param_count
-
-                        layer_info["weights"].append(weight_info)
-                    except Exception as e:
-                        logger.warning(f"Error processing weight in layer {layer.name}: {str(e)}")
-                        continue
-
-                layer_info["total_parameters"] = int(layer_params)
-                layer_info["size_mb"] = layer_size / (1024 * 1024)
-                weights_info.append(layer_info)
-
-                # Track layer sizes
-                layer_sizes[layer.name] = {
-                    "parameters": int(layer_params),
-                    "size_mb": layer_size / (1024 * 1024),
-                }
-
-                total_params += layer_params
-
-            # Get model file size
-            logger.info("Calculating model file size...")
-            try:
-                temp_model_path = model_dir / "temp_model.h5"
-                model.save(temp_model_path)
-                model_file_size = temp_model_path.stat().st_size
-                temp_model_path.unlink()  # Remove temporary file
-            except Exception as e:
-                logger.warning(f"Failed to calculate model file size: {str(e)}")
-                model_file_size = 0
-
-            # Prepare size summary
-            size_summary = {
-                "model_statistics": {
-                    "total_parameters": int(total_params),
-                    "trainable_parameters": int(trainable_params),
-                    "non_trainable_parameters": int(non_trainable_params),
-                    "model_file_size_mb": model_file_size / (1024 * 1024),
-                    "weights_size_mb": total_params * 4 / (1024 * 1024),  # Assuming float32
-                },
-                "layer_sizes": layer_sizes,
-                "detailed_layer_info": weights_info,
-            }
-
-            # Save size information as JSON
-            logger.info("Saving model size info as JSON...")
-            try:
-                with open(model_dir / "model_size_info.json", "w") as f:
-                    json.dump(size_summary, f, indent=4)
-                logger.info(f"Size information saved to {model_dir / 'model_size_info.json'}")
-            except Exception as e:
-                logger.error(f"Failed to save model_size_info.json: {str(e)}")
-
-            # Create a human-readable report
-            logger.info("Creating MODEL_SIZE_REPORT.txt...")
-            try:
-                with open(model_dir / "MODEL_SIZE_REPORT.txt", "w") as f:
-                    f.write("=" * 80 + "\n")
-                    f.write("MODEL SIZE REPORT\n")
-                    f.write("=" * 80 + "\n\n")
-
-                    # Overall Statistics
-                    f.write("OVERALL STATISTICS\n")
-                    f.write("-" * 50 + "\n")
-                    f.write(
-                        f"Total Parameters:        {size_summary['model_statistics']['total_parameters']:,}\n"
-                    )
-                    f.write(
-                        f"Trainable Parameters:    {size_summary['model_statistics']['trainable_parameters']:,}\n"
-                    )
-                    f.write(
-                        f"Non-trainable Parameters:{size_summary['model_statistics']['non_trainable_parameters']:,}\n"
-                    )
-                    f.write(
-                        f"Model File Size:         {size_summary['model_statistics']['model_file_size_mb']:.2f} MB\n"
-                    )
-                    f.write(
-                        f"Weights Size:            {size_summary['model_statistics']['weights_size_mb']:.2f} MB\n\n"
-                    )
-
-                    # Layer-wise Statistics
-                    f.write("LAYER-WISE STATISTICS\n")
-                    f.write("-" * 50 + "\n")
-                    f.write(f"{'Layer Name':<30} {'Parameters':>12} {'Size (MB)':>12}\n")
-                    f.write("-" * 80 + "\n")
-                    for layer_name, info in layer_sizes.items():
-                        f.write(
-                            f"{layer_name:<30} {info['parameters']:>12,} {info['size_mb']:>12.2f}\n"
-                        )
-                    f.write("\n")
-
-                    # Detailed Layer Information
-                    f.write("DETAILED LAYER INFORMATION\n")
-                    f.write("-" * 50 + "\n")
-                    for layer in weights_info:
-                        f.write(f"\nLayer: {layer['name']} ({layer['type']})\n")
-                        f.write(f"Trainable: {layer['trainable']}\n")
-                        f.write(f"Total Parameters: {layer['total_parameters']:,}\n")
-                        f.write(f"Size: {layer['size_mb']:.2f} MB\n")
-                        if layer["weights"]:
-                            f.write("Weights:\n")
-                            for w in layer["weights"]:
-                                f.write(f"  - {w['name']}\n")
-                                f.write(f"    Shape: {w['shape']}\n")
-                                f.write(f"    Parameters: {w['parameters']:,}\n")
-                                f.write(f"    Size: {w['size_mb']:.2f} MB\n")
-                        f.write("-" * 30 + "\n")
-                logger.info(f"Model size report saved to {model_dir / 'MODEL_SIZE_REPORT.txt'}")
-            except Exception as e:
-                logger.error(f"Failed to create MODEL_SIZE_REPORT.txt: {str(e)}")
-
-            # Log size summary
-            logger.info("\n=== Model Size Summary ===")
-            logger.info(
-                f"Total Parameters: {size_summary['model_statistics']['total_parameters']:,}"
-            )
-            logger.info(
-                f"Trainable Parameters: {size_summary['model_statistics']['trainable_parameters']:,}"
-            )
-            logger.info(
-                f"Non-trainable Parameters: {size_summary['model_statistics']['non_trainable_parameters']:,}"
-            )
-            logger.info(
-                f"Model File Size: {size_summary['model_statistics']['model_file_size_mb']:.2f} MB"
-            )
-            logger.info(
-                f"Weights Size: {size_summary['model_statistics']['weights_size_mb']:.2f} MB"
-            )
-        except Exception as e:
-            logger.error(f"Failed to calculate and save model size information: {str(e)}")
-            
         logger.info("Model information saved successfully")
         logger.info("========================")
 
@@ -518,7 +330,7 @@ def main():
     data_path = "data"
     classification_types = ["binary", "super", "sub"]  # "binary", "super", "sub"
     model_types = [
-        "micro",
+        "standard",
     ]  # "standard", "micro"
     lead_configs = [
         "all-leads"
@@ -536,7 +348,7 @@ def main():
                     )
 
                     models_dir = (
-                        Path("models", "original") / classification_type / lead_config / model_type
+                        Path("models") / model_type / Path("fake") / classification_type / lead_config
                     )
                     models_dir.mkdir(parents=True, exist_ok=True)
 
