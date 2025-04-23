@@ -9,9 +9,6 @@ import json
 import matplotlib.pyplot as plt
 
 from model.ecg_model import create_ecg_model
-from model.micro_ecg_model import (
-    create_micro_ecg_model,
-)
 from evaluation.metrics import ECGEvaluator
 
 # Configuration
@@ -100,11 +97,7 @@ def train_model(
     num_classes = CLASSIFICATION_TYPES[classification_type]
     logger.info(f"Number of output classes: {num_classes}")
 
-    # Create appropriate model based on type
-    if model_type == "micro":
-        model = create_micro_ecg_model(input_shape, num_classes)
-    else:
-        model = create_ecg_model(input_shape, num_classes)
+    model = create_ecg_model(input_shape, num_classes)
 
     # Compile model
     model.compile(
@@ -329,100 +322,87 @@ def main():
     # Configuration
     data_path = "data"
     classification_types = ["binary", "super", "sub"]  # "binary", "super", "sub"
-    model_types = [
-        "standard",
-    ]  # "standard", "micro"
     lead_configs = [
         "all-leads"
     ]  # "lead-I", "bipolar-limb", "unipolar-limb", "limb-leads", "precordial-leads", "all-leads"
 
+    model_type = "standard"
     # Train for each combination
     for classification_type in classification_types:
         for lead_config in lead_configs:
-            for model_type in model_types:
+            try:
+                # Setup logging
+                logger = setup_logging(classification_type, lead_config)
+                logger.info(
+                    f"Starting training for {classification_type} classification with {lead_config} using {model_type} model"
+                )
+                models_dir = (
+                    Path("models") / model_type / Path("fake") / classification_type / lead_config
+                )
+                models_dir.mkdir(parents=True, exist_ok=True)
+                # Load data
+                logger.info("Loading data...")
+                x_train, x_test, y_train, y_test = load_data(
+                    data_path, classification_type, lead_config
+                )
+                # Train model
+                logger.info("Training model...")
+                model, history = train_model(
+                    x_train,
+                    y_train,
+                    x_test,
+                    y_test,
+                    classification_type,
+                    lead_config,
+                    model_type,
+                    logger,
+                )
+                # Save model first - this is the most important step
+                logger.info("Saving model...")
                 try:
-                    # Setup logging
-                    logger = setup_logging(classification_type, lead_config)
-                    logger.info(
-                        f"Starting training for {classification_type} classification with {lead_config} using {model_type} model"
-                    )
-
-                    models_dir = (
-                        Path("models") / model_type / Path("fake") / classification_type / lead_config
-                    )
-                    models_dir.mkdir(parents=True, exist_ok=True)
-
-                    # Load data
-                    logger.info("Loading data...")
-                    x_train, x_test, y_train, y_test = load_data(
-                        data_path, classification_type, lead_config
-                    )
-
-                    # Train model
-                    logger.info("Training model...")
-                    model, history = train_model(
-                        x_train,
-                        y_train,
+                    model.save(models_dir / "model.h5")
+                    logger.info(f"Model saved to {models_dir / 'model.h5'}")
+                except Exception as e:
+                    logger.error(f"Failed to save model: {str(e)}")
+                    raise
+                # Save model architecture and information
+                logger.info("Saving model info...")
+                try:
+                    save_model_info(model, models_dir, logger)
+                except Exception as e:
+                    logger.error(f"Failed to save model info: {str(e)}")
+                    # Don't raise here, continue with evaluation
+                # Evaluate model
+                logger.info("Evaluating model...")
+                try:
+                    metrics = evaluate_model(
+                        model,
                         x_test,
                         y_test,
                         classification_type,
                         lead_config,
                         model_type,
                         logger,
+                        models_dir,
                     )
-
-                    # Save model first - this is the most important step
-                    logger.info("Saving model...")
-                    try:
-                        model.save(models_dir / "model.h5")
-                        logger.info(f"Model saved to {models_dir / 'model.h5'}")
-                    except Exception as e:
-                        logger.error(f"Failed to save model: {str(e)}")
-                        raise
-
-                    # Save model architecture and information
-                    logger.info("Saving model info...")
-                    try:
-                        save_model_info(model, models_dir, logger)
-                    except Exception as e:
-                        logger.error(f"Failed to save model info: {str(e)}")
-                        # Don't raise here, continue with evaluation
-
-                    # Evaluate model
-                    logger.info("Evaluating model...")
-                    try:
-                        metrics = evaluate_model(
-                            model,
-                            x_test,
-                            y_test,
-                            classification_type,
-                            lead_config,
-                            model_type,
-                            logger,
-                            models_dir,
-                        )
-
-                        # Save metrics
-                        with open(models_dir / "metrics.json", "w") as f:
-                            json.dump(metrics, f, indent=4)
-                        logger.info(f"Metrics saved to {models_dir / 'metrics.json'}")
-                    except Exception as e:
-                        logger.error(f"Error during evaluation: {str(e)}")
-                        # Don't raise here, continue with history saving
-
-                    # Save training history
-                    logger.info("Saving training history...")
-                    try:
-                        save_training_history(history, models_dir)
-                        logger.info(f"Training history saved to {models_dir}")
-                    except Exception as e:
-                        logger.error(f"Failed to save training history: {str(e)}")
-
-                    logger.info("Training completed successfully")
-
+                    # Save metrics
+                    with open(models_dir / "metrics.json", "w") as f:
+                        json.dump(metrics, f, indent=4)
+                    logger.info(f"Metrics saved to {models_dir / 'metrics.json'}")
                 except Exception as e:
-                    logger.error(f"Error during training: {str(e)}")
-                    continue
+                    logger.error(f"Error during evaluation: {str(e)}")
+                    # Don't raise here, continue with history saving
+                # Save training history
+                logger.info("Saving training history...")
+                try:
+                    save_training_history(history, models_dir)
+                    logger.info(f"Training history saved to {models_dir}")
+                except Exception as e:
+                    logger.error(f"Failed to save training history: {str(e)}")
+                logger.info("Training completed successfully")
+            except Exception as e:
+                logger.error(f"Error during training: {str(e)}")
+                continue
 
 
 if __name__ == "__main__":
