@@ -59,7 +59,7 @@ def load_data(data_path: str, classification_type: str, lead_config: str) -> tup
     """Load and preprocess data."""
     data_path = Path(data_path)
     processed_path = (
-        data_path / "processed" / "ptb-xl-missing-values" / classification_type / lead_config
+        data_path / "processed" / "ptb-xl-1.0.3" / classification_type / lead_config
     )
 
     # Load data
@@ -98,13 +98,22 @@ def train_model(
     logger.info(f"Number of output classes: {num_classes}")
 
     model = create_ecg_model(input_shape, num_classes)
-
-    # Compile model
-    model.compile(
-        optimizer=optimizers.Adam(learning_rate=0.0005),
-        loss=losses.BinaryCrossentropy(),
-        metrics=[metrics.BinaryAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
-    )
+    
+    
+    if classification_type == "binary":
+        # Compile model
+        model.compile(
+            optimizer=optimizers.Adam(learning_rate=0.0005),
+            loss=losses.BinaryFocalCrossentropy(),
+            metrics=[metrics.BinaryAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
+        )
+    else:
+        # Compile model
+        model.compile(
+            optimizer=optimizers.Adam(learning_rate=0.0005),
+            loss=losses.CategoricalFocalCrossentropy(),
+            metrics=[metrics.CategoricalAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
+        )
 
     # Callbacks
     callbacks_list = [
@@ -337,7 +346,7 @@ def main():
                     f"Starting training for {classification_type} classification with {lead_config} using {model_type} model"
                 )
                 models_dir = (
-                    Path("models") / model_type / Path("fake") / classification_type / lead_config
+                    Path("models") / model_type / Path("original") / classification_type / lead_config
                 )
                 models_dir.mkdir(parents=True, exist_ok=True)
                 # Load data
