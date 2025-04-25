@@ -100,20 +100,13 @@ def train_model(
     model = create_ecg_model(input_shape, num_classes)
     
     
-    if classification_type == "binary":
-        # Compile model
-        model.compile(
-            optimizer=optimizers.Adam(learning_rate=0.0005),
-            loss=losses.BinaryFocalCrossentropy(),
-            metrics=[metrics.BinaryAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
-        )
-    else:
-        # Compile model
-        model.compile(
-            optimizer=optimizers.Adam(learning_rate=0.0005),
-            loss=losses.CategoricalFocalCrossentropy(),
-            metrics=[metrics.CategoricalAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
-        )
+    
+    # Compile model
+    model.compile(
+        optimizer=optimizers.Adam(learning_rate=0.0005),
+        loss=losses.BinaryFocalCrossentropy(),
+        metrics=[metrics.BinaryAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
+    )
 
     # Callbacks
     callbacks_list = [
