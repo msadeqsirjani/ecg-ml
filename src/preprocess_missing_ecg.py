@@ -101,64 +101,134 @@ class MissingValueProcessor:
 
     def add_missing_values(self, signal: np.ndarray, sampling_rate: int) -> tuple:
         """
-        Add random missing values to ECG signal.
-
+        Add missing values to ECG signal at regular intervals within a randomly selected range.
+        
+        This method:
+        1. Randomly selects start and end points in the signal
+        2. Ensures the range can accommodate at least 12 periods of 0.5s missing values
+        3. Applies 0.5-second missing periods regularly within that range
+        
         Args:
             signal: Input signal of shape (sequence_length, n_channels)
             sampling_rate: Sampling rate of the signal in Hz
 
         Returns:
-            Tuple of (processed_signal, start_time, duration)
+            Tuple of (processed_signal, start_times, durations, period_values, range_start_time, range_duration)
         """
-        # Random duration between 1 and 9 seconds
-        missing_duration = np.random.randint(1, 10)
-
-        # Calculate total samples and samples to remove
+        # Create copy of signal
+        processed_signal = signal.copy()
+        
+        # Calculate total number of samples
         total_samples = signal.shape[0]
-        samples_to_remove = missing_duration * sampling_rate
-
-        # Ensure we don't try to remove more samples than we have
-        if samples_to_remove >= total_samples:
+        
+        # Duration of each missing segment
+        missing_duration = 0.5  # 500ms missing duration
+        missing_samples = int(missing_duration * sampling_rate)
+        
+        # Period between missing segments (fixed at 0.5 seconds)
+        period_seconds = 0.5  # 0.5-second period between missing values
+        period_samples = int(period_seconds * sampling_rate)
+        
+        # Each complete cycle is: missing segment + period between
+        cycle_samples = missing_samples + period_samples
+        
+        # Calculate required samples for 12 missing periods
+        required_samples = 12 * cycle_samples
+        
+        # Ensure the signal is long enough for at least 12 periods
+        if total_samples < required_samples:
             self.logger.warning(
-                f"Missing duration ({missing_duration}s) is too long for signal length ({total_samples/sampling_rate}s)"
+                f"Signal too short ({total_samples} samples) for 12 missing periods (need {required_samples})"
             )
-            return signal, None, None
-
-        # Random start point for missing sequence
-        max_start = total_samples - samples_to_remove
-        start_idx = np.random.randint(0, max_start)
-        end_idx = start_idx + samples_to_remove
-
+            return signal, [], [], [], None, None
+        
+        # Randomly select range start and end, ensuring it's at least 20% of the signal
+        min_range_percent = 0.2
+        min_range_samples = max(required_samples, int(total_samples * min_range_percent))
+        max_range_samples = total_samples  # Could be limited to a percentage if needed
+        
+        # Generate random range size between min and max
+        range_samples = np.random.randint(min_range_samples, max_range_samples)
+        
+        # Select random start point, ensuring the range fits within signal
+        max_start = total_samples - range_samples
+        start_sample = np.random.randint(0, max_start) if max_start > 0 else 0
+        
+        # Calculate end point
+        end_sample = start_sample + range_samples
+        
+        # Calculate how many missing periods we can fit in this range
+        possible_periods = range_samples // cycle_samples
+        
+        # Ensure we have at least 12 periods
+        if possible_periods < 12:
+            self.logger.warning(
+                f"Selected range ({range_samples} samples) can only fit {possible_periods} periods"
+            )
+            # Adjust end point to ensure 12 periods
+            end_sample = start_sample + (12 * cycle_samples)
+            possible_periods = 12
+        
+        self.logger.info(
+            f"Adding {possible_periods} missing periods within range: {start_sample/sampling_rate:.2f}s - {end_sample/sampling_rate:.2f}s"
+        )
+        
+        # Track start times and durations
+        start_times = []
+        durations = []
+        period_values = []
+        
         try:
-            # Create copy and insert missing values
-            processed_signal = signal.copy()
-            # Use a specific value instead of NaN (e.g., 0 or the minimum value - 1)
-            missing_value = (
-                0  # or you could use 'np.min(signal) - 1' or another specific value
-            )
-            processed_signal[start_idx:end_idx, :] = missing_value
-
-            # Calculate start time in seconds
-            start_time = start_idx / sampling_rate
-
-            return processed_signal, start_time, missing_duration
+            # Apply missing values at regular intervals within the selected range
+            current_pos = start_sample
+            
+            for i in range(possible_periods):
+                # Set values to zero for this period
+                processed_signal[current_pos:current_pos + missing_samples, :] = 0
+                
+                # Record start time, duration and period
+                start_times.append(current_pos / sampling_rate)
+                durations.append(missing_duration)
+                period_values.append(period_seconds)
+                
+                # Move to next position
+                current_pos += cycle_samples
+                
+                # Stop if we exceed the end point
+                if current_pos + missing_samples > end_sample:
+                    break
+            
+            # Store the overall range information
+            range_start_time = start_sample / sampling_rate
+            range_end_time = end_sample / sampling_rate
+            range_duration = range_end_time - range_start_time
+            
+            return processed_signal, start_times, durations, period_values, range_start_time, range_duration
 
         except Exception as e:
             self.logger.error(f"Error in modifying signal: {str(e)}")
             import traceback
-
             self.logger.error(traceback.format_exc())
-            return signal, None, None
+            return signal, [], [], [], None, None
 
     def save_signal(
         self,
         signal: np.ndarray,
-        start_time: float,
-        duration: int,
+        start_time,
+        duration,
         output_path: Path,
         sampling_rate: int,
     ):
-        """Save signal and header in WFDB format."""
+        """
+        Save signal and header in WFDB format.
+        
+        Args:
+            signal: Processed ECG signal
+            start_time: Start time of missing values (can be string for multiple periods)
+            duration: Duration of missing values
+            output_path: Path to save the signal
+            sampling_rate: Sampling rate of the signal in Hz
+        """
         # Convert output_path to Path object if it's a string
         if isinstance(output_path, str):
             output_path = Path(output_path)
@@ -166,6 +236,21 @@ class MissingValueProcessor:
         # Extract record name and directory path
         record_name = output_path.name
         write_dir = str(output_path.parent)
+
+        # Create comments about missing values
+        if isinstance(start_time, str):
+            # If start_time is a string, it contains information about multiple periods
+            comments = [
+                f"Missing Values: {start_time}",
+                f"Sampling Rate: {sampling_rate}Hz",
+                f"Each missing period: {duration}s duration"
+            ]
+        else:
+            # For backward compatibility with single missing period
+            comments = [
+                f"Missing Values: segment from {start_time:.2f}s for {duration}s",
+                f"Sampling Rate: {sampling_rate}Hz",
+            ]
 
         # Save signal data
         wfdb.wrsamp(
@@ -188,14 +273,11 @@ class MissingValueProcessor:
                 "V6",
             ][: signal.shape[1]],
             p_signal=signal,
-            comments=[
-                f"Missing Values: segment from {start_time:.2f}s for {duration}s",
-                f"Sampling Rate: {sampling_rate}Hz",
-            ],
+            comments=comments,
         )
 
     def process_dataset(self):
-        """Process PTB-XL dataset by adding random missing values to each signal."""
+        """Process PTB-XL dataset by adding periodic missing values to each signal."""
         try:
             # Load database
             self.logger.info("Loading database...")
@@ -224,9 +306,8 @@ class MissingValueProcessor:
                         )
 
                         # Add missing values
-                        noisy_signal, start_time, duration = self.add_missing_values(
-                            signal, sampling_rate
-                        )
+                        result = self.add_missing_values(signal, sampling_rate)
+                        noisy_signal, start_times, durations, period_values, range_start_time, range_duration = result
 
                         # Prepare output path maintaining PTB-XL structure
                         record_num = f"{ecg_id:05d}"
@@ -243,25 +324,35 @@ class MissingValueProcessor:
                         suffix = "_lr" if sampling_rate == 100 else "_hr"
                         output_path = output_dir / f"{record_num}{suffix}"
 
-                        # Save signal and header
+                        # Save signal and header with range information
+                        if range_start_time is not None:
+                            missing_desc = f"multiple ({len(start_times)} periods) within range {range_start_time:.2f}s - {range_start_time + range_duration:.2f}s"
+                        else:
+                            missing_desc = f"multiple ({len(start_times)} periods)"
+                            
                         self.save_signal(
                             noisy_signal,
-                            start_time,
-                            duration,
+                            missing_desc,
+                            durations[0] if durations else 0,
                             output_path,
                             sampling_rate,
                         )
 
-                        # Store missing value information
-                        if start_time is not None:
-                            missing_info.append(
-                                {
-                                    "ecg_id": ecg_id,
-                                    "sampling_rate": sampling_rate,
-                                    "start_time": start_time,
-                                    "duration": duration,
-                                }
-                            )
+                        # Store all missing value periods in metadata
+                        if start_times and len(start_times) > 0:
+                            for i, (start_time, duration) in enumerate(zip(start_times, durations)):
+                                missing_info.append(
+                                    {
+                                        "ecg_id": ecg_id,
+                                        "sampling_rate": sampling_rate,
+                                        "start_time": start_time,
+                                        "duration": duration,
+                                        "period_index": i,
+                                        "period_interval": period_values[i] if i < len(period_values) else 0.5,
+                                        "range_start": range_start_time,
+                                        "range_duration": range_duration
+                                    }
+                                )
 
                     if idx % 100 == 0:
                         self.logger.info(f"Processed {idx}/{total_files} signals")
