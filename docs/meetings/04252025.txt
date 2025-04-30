@@ -1,0 +1,4 @@
+Create a new dataset with multiple period in the dataset in missing value.
+5-20 seconds power failure period  _____ *** _____ *** _____ *** ____
+change the frequency of power failure every dynamically (Every 1 second or every 0.5 second)
+Share the result on Monday
