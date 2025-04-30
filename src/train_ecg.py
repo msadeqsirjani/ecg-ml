@@ -59,7 +59,7 @@ def load_data(data_path: str, classification_type: str, lead_config: str) -> tup
     """Load and preprocess data."""
     data_path = Path(data_path)
     processed_path = (
-        data_path / "processed" / "ptb-xl-1.0.3" / classification_type / lead_config
+        data_path / "processed" / "ptb-xl-missing-values" / classification_type / lead_config
     )
 
     # Load data
@@ -323,7 +323,7 @@ def main():
     """Main training function."""
     # Configuration
     data_path = "data"
-    classification_types = ["binary", "super", "sub"]  # "binary", "super", "sub"
+    classification_types = ["binary"]  # "binary", "super", "sub"
     lead_configs = [
         "all-leads"
     ]  # "lead-I", "bipolar-limb", "unipolar-limb", "limb-leads", "precordial-leads", "all-leads"
@@ -339,7 +339,7 @@ def main():
                     f"Starting training for {classification_type} classification with {lead_config} using {model_type} model"
                 )
                 models_dir = (
-                    Path("models") / model_type / Path("original") / classification_type / lead_config
+                    Path("models") / model_type / Path("fake") / classification_type / lead_config
                 )
                 models_dir.mkdir(parents=True, exist_ok=True)
                 # Load data
