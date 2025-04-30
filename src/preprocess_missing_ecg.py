@@ -8,15 +8,27 @@ import ast
 import sys
 import shutil
 import os
+from tqdm import tqdm
+from typing import List, Tuple, Optional
 
 
 class MissingValueProcessor:
-    """Class for adding random missing values to ECG signals."""
+    """Class for adding random and periodic missing values to ECG signals."""
 
-    def __init__(self, data_path: str, output_path: str):
+    def __init__(
+        self,
+        data_path: str,
+        output_path: str,
+        gap_duration: float = 0.5,
+        gap_interval: float = 0.5,
+        random_seed: Optional[int] = None,
+    ):
         """Initialize missing value processor with logging configuration."""
         self.data_path = Path(data_path)
         self.output_path = Path(output_path)
+        self.gap_duration = gap_duration
+        self.gap_interval = gap_interval
+        self.random_seed = random_seed
 
         # Setup logging
         self._setup_logging()
@@ -27,7 +39,15 @@ class MissingValueProcessor:
         # Validate inputs
         self._validate_inputs()
 
-        self.logger.info(f"Initialized MissingValueProcessor")
+        # Set random seed if provided
+        if random_seed is not None:
+            np.random.seed(random_seed)
+
+        self.logger.info(
+            f"Initialized MissingValueProcessor with: "
+            f"gap_duration={gap_duration}s, "
+            f"gap_interval={gap_interval}s"
+        )
 
     def _setup_logging(self):
         """Configure logging system."""
@@ -97,16 +117,47 @@ class MissingValueProcessor:
             self.logger.error(f"Data path {self.data_path} does not exist")
             raise ValueError(f"Data path {self.data_path} does not exist")
 
+        if self.gap_duration <= 0 or self.gap_interval <= 0:
+            self.logger.error("Gap duration and interval must be positive")
+            raise ValueError("Gap duration and interval must be positive")
+
         self.logger.debug("Input validation successful")
+
+    def _generate_gap_positions(self, signal_length: int, sampling_rate: int) -> List[Tuple[int, int]]:
+        """
+        Generate positions for periodic missing value gaps.
+
+        Args:
+            signal_length: Length of the signal in samples
+            sampling_rate: Sampling rate of the signal in Hz
+
+        Returns:
+            List of (start, end) positions for gaps
+        """
+        # Convert time parameters to samples
+        gap_duration_samples = int(self.gap_duration * sampling_rate)
+        gap_interval_samples = int(self.gap_interval * sampling_rate)
+        
+        # Calculate number of gaps that can fit in the signal
+        total_gap_samples = gap_duration_samples + gap_interval_samples
+        num_gaps = signal_length // total_gap_samples
+
+        # Generate random offset for the first gap
+        first_gap_offset = np.random.randint(0, gap_interval_samples)
+
+        # Generate gap positions
+        gap_positions = []
+        for i in range(num_gaps):
+            start = first_gap_offset + i * total_gap_samples
+            end = start + gap_duration_samples
+            if end <= signal_length:
+                gap_positions.append((start, end))
+
+        return gap_positions
 
     def add_missing_values(self, signal: np.ndarray, sampling_rate: int) -> tuple:
         """
-        Add missing values to ECG signal at regular intervals within a randomly selected range.
-        
-        This method:
-        1. Randomly selects start and end points in the signal
-        2. Ensures the range can accommodate at least 12 periods of 0.5s missing values
-        3. Applies 0.5-second missing periods regularly within that range
+        Add periodic missing values to ECG signal.
         
         Args:
             signal: Input signal of shape (sequence_length, n_channels)
@@ -121,57 +172,8 @@ class MissingValueProcessor:
         # Calculate total number of samples
         total_samples = signal.shape[0]
         
-        # Duration of each missing segment
-        missing_duration = 0.5  # 500ms missing duration
-        missing_samples = int(missing_duration * sampling_rate)
-        
-        # Period between missing segments (fixed at 0.5 seconds)
-        period_seconds = 0.5  # 0.5-second period between missing values
-        period_samples = int(period_seconds * sampling_rate)
-        
-        # Each complete cycle is: missing segment + period between
-        cycle_samples = missing_samples + period_samples
-        
-        # Calculate required samples for 12 missing periods
-        required_samples = 12 * cycle_samples
-        
-        # Ensure the signal is long enough for at least 12 periods
-        if total_samples < required_samples:
-            self.logger.warning(
-                f"Signal too short ({total_samples} samples) for 12 missing periods (need {required_samples})"
-            )
-            return signal, [], [], [], None, None
-        
-        # Randomly select range start and end, ensuring it's at least 20% of the signal
-        min_range_percent = 0.2
-        min_range_samples = max(required_samples, int(total_samples * min_range_percent))
-        max_range_samples = total_samples  # Could be limited to a percentage if needed
-        
-        # Generate random range size between min and max
-        range_samples = np.random.randint(min_range_samples, max_range_samples)
-        
-        # Select random start point, ensuring the range fits within signal
-        max_start = total_samples - range_samples
-        start_sample = np.random.randint(0, max_start) if max_start > 0 else 0
-        
-        # Calculate end point
-        end_sample = start_sample + range_samples
-        
-        # Calculate how many missing periods we can fit in this range
-        possible_periods = range_samples // cycle_samples
-        
-        # Ensure we have at least 12 periods
-        if possible_periods < 12:
-            self.logger.warning(
-                f"Selected range ({range_samples} samples) can only fit {possible_periods} periods"
-            )
-            # Adjust end point to ensure 12 periods
-            end_sample = start_sample + (12 * cycle_samples)
-            possible_periods = 12
-        
-        self.logger.info(
-            f"Adding {possible_periods} missing periods within range: {start_sample/sampling_rate:.2f}s - {end_sample/sampling_rate:.2f}s"
-        )
+        # Generate gap positions
+        gap_positions = self._generate_gap_positions(total_samples, sampling_rate)
         
         # Track start times and durations
         start_times = []
@@ -179,29 +181,24 @@ class MissingValueProcessor:
         period_values = []
         
         try:
-            # Apply missing values at regular intervals within the selected range
-            current_pos = start_sample
-            
-            for i in range(possible_periods):
+            # Apply missing values at regular intervals
+            for start, end in gap_positions:
                 # Set values to zero for this period
-                processed_signal[current_pos:current_pos + missing_samples, :] = 0
+                processed_signal[start:end, :] = 0
                 
                 # Record start time, duration and period
-                start_times.append(current_pos / sampling_rate)
-                durations.append(missing_duration)
-                period_values.append(period_seconds)
-                
-                # Move to next position
-                current_pos += cycle_samples
-                
-                # Stop if we exceed the end point
-                if current_pos + missing_samples > end_sample:
-                    break
+                start_times.append(start / sampling_rate)
+                durations.append(self.gap_duration)
+                period_values.append(self.gap_interval)
             
             # Store the overall range information
-            range_start_time = start_sample / sampling_rate
-            range_end_time = end_sample / sampling_rate
-            range_duration = range_end_time - range_start_time
+            if gap_positions:
+                range_start_time = gap_positions[0][0] / sampling_rate
+                range_end_time = gap_positions[-1][1] / sampling_rate
+                range_duration = range_end_time - range_start_time
+            else:
+                range_start_time = None
+                range_duration = None
             
             return processed_signal, start_times, durations, period_values, range_start_time, range_duration
 
@@ -291,7 +288,7 @@ class MissingValueProcessor:
             sampling_rates = [100, 500]
 
             self.logger.info(f"Processing {total_files} signals...")
-            for idx, (ecg_id, row) in enumerate(Y.iterrows(), 1):
+            for idx, (ecg_id, row) in enumerate(tqdm(Y.iterrows(), desc="Processing signals"), 1):
                 try:
                     # Process both sampling rates
                     for sampling_rate in sampling_rates:
@@ -348,7 +345,7 @@ class MissingValueProcessor:
                                         "start_time": start_time,
                                         "duration": duration,
                                         "period_index": i,
-                                        "period_interval": period_values[i] if i < len(period_values) else 0.5,
+                                        "period_interval": period_values[i] if i < len(period_values) else self.gap_interval,
                                         "range_start": range_start_time,
                                         "range_duration": range_duration
                                     }
@@ -383,6 +380,9 @@ def main():
         processor = MissingValueProcessor(
             data_path="data/raw/ptb-xl-1.0.3",
             output_path=f"data/raw/ptb-xl-missing-values",
+            gap_duration=0.5,
+            gap_interval=0.5,
+            random_seed=42,
         )
         processor.process_dataset()
 
