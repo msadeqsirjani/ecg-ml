@@ -1,0 +1,293 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{color}
+\usepackage{colortbl}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{longtable}
+\usepackage{geometry}
+\usepackage{adjustbox}
+
+\geometry{a4paper, margin=1in}
+
+\title{Model Comparison Report: PTB-XL Dataset Analysis}
+\author{Analysis Team}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Executive Summary}
+This report presents a comprehensive comparison between different models trained on the PTB-XL dataset, analyzing their performance across three classification types: Binary, Superclasses, and Subclasses. The analysis covers both the original PTB-XL dataset and a modified version with simulated signal gaps, along with performance comparisons between standard and optimized models using pruning and quantization techniques.
+
+\section{Dataset Overview}
+\begin{itemize}
+    \item \textbf{Original PTB-XL}: Standard dataset without modifications
+    \item \textbf{Modified PTB-XL}: Same dataset with simulated signal gaps:
+    \begin{itemize}
+        \item 0.5-second zero-value gaps
+        \item 10 gaps per 10-second signal (5\% missing data)
+        \item Simulates real-world signal loss scenarios
+    \end{itemize}
+\end{itemize}
+
+\section{Model Overview}
+\begin{itemize}
+    \item \textbf{Standard Model}: Baseline CNN model
+    \item \textbf{Optimized Model}: Same architecture with:
+    \begin{itemize}
+        \item Model pruning (64.3\% size reduction)
+        \item Weight quantization (76\% size reduction)
+        \item Final size: 600KB (8.6\% of original 7MB)
+    \end{itemize}
+\end{itemize}
+
+\section{Overall Performance Comparison}
+Table \ref{tab:overall_metrics} presents the comparison of key performance metrics across all models and classification types.
+
+\begin{table}[H]
+\centering
+\caption{Overall Model Performance Comparison}
+\label{tab:overall_metrics}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llccccc}
+\toprule
+Dataset & Classification & Accuracy & Precision & Recall & F1 Score & AUC \\
+\midrule
+\multirow{3}{*}{Original PTB-XL (Standard)} & Binary & 0.8708 & 0.8783 & 0.8712 & 0.8717 & 0.9460 \\
+ & Superclasses & 0.8914 & 0.7969 & 0.7686 & 0.7824 & 0.9258 \\
+ & Subclasses & 0.9650 & 0.7555 & 0.6170 & 0.6794 & 0.9164 \\
+\midrule
+\multirow{3}{*}{Original PTB-XL (Optimized)} & Binary & 0.8826 & 0.8905 & 0.8854 & 0.8846 & 0.9482 \\
+ & Superclasses & 0.8734 & 0.7672 & 0.7185 & 0.7327 & 0.9186 \\
+ & Subclasses & 0.9636 & 0.6836 & 0.5372 & 0.5622 & 0.9012 \\
+\midrule
+\multirow{3}{*}{Modified PTB-XL (Standard)} & Binary & 0.8508 & 0.8565 & 0.8567 & 0.8550 & 0.9322 \\
+ & Superclasses & 0.8821 & 0.7914 & 0.7293 & 0.7589 & 0.9211 \\
+ & Subclasses & 0.9645 & 0.7662 & 0.6170 & 0.6794 & 0.9164 \\
+\midrule
+\multirow{3}{*}{Modified PTB-XL (Optimized)} & Binary & 0.8512 & 0.8572 & 0.8535 & 0.8534 & 0.9329 \\
+ & Superclasses & 0.8795 & 0.7815 & 0.7299 & 0.7548 & 0.9203 \\
+ & Subclasses & 0.9637 & 0.8001 & 0.5290 & 0.6368 & 0.9164 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\section{Performance Analysis}
+
+\subsection{Original PTB-XL Dataset}
+\begin{itemize}
+    \item \textbf{Binary Classification}:
+    \begin{itemize}
+        \item Improvements: Accuracy (+1.18\%), Precision (+1.22\%), Recall (+1.42\%), F1 (+1.29\%), AUC (+0.22\%)
+        \item Suggests effective noise removal through optimization
+    \end{itemize}
+    
+    \item \textbf{Superclasses Classification}:
+    \begin{itemize}
+        \item Degradation: Accuracy (-1.80\%), Precision (-2.97\%), Recall (-5.01\%), F1 (-4.97\%), AUC (-0.72\%)
+        \item Indicates potential feature loss during optimization
+    \end{itemize}
+    
+    \item \textbf{Subclasses Classification}:
+    \begin{itemize}
+        \item Degradation: Accuracy (-0.14\%), Precision (-7.19\%), Recall (-7.98\%), F1 (-11.72\%), AUC (-1.52\%)
+        \item Complex patterns affected by optimization
+    \end{itemize}
+\end{itemize}
+
+\subsection{Modified PTB-XL Dataset}
+\begin{itemize}
+    \item \textbf{Binary Classification}:
+    \begin{itemize}
+        \item Minimal changes: Accuracy (+0.04\%), Precision (+0.07\%), Recall (-0.32\%), F1 (-0.16\%), AUC (+0.07\%)
+        \item Robust to both optimization and signal gaps
+    \end{itemize}
+    
+    \item \textbf{Superclasses Classification}:
+    \begin{itemize}
+        \item Slight changes: Accuracy (-0.26\%), Precision (-0.99\%), Recall (+0.06\%), F1 (-0.41\%), AUC (-0.08\%)
+        \item Better tolerance to optimization with modified data
+    \end{itemize}
+    
+    \item \textbf{Subclasses Classification}:
+    \begin{itemize}
+        \item Mixed results: Accuracy (+0.02\%), Precision (+3.39\%), Recall (-8.80\%), F1 (-4.26\%), AUC (no change)
+        \item Trade-off between precision and recall
+    \end{itemize}
+\end{itemize}
+
+\section{Detailed Class-wise Analysis}
+
+\subsection{Binary Classification}
+\begin{longtable}{lcccccc}
+\caption{Binary Classification Class-wise Performance}
+\label{tab:binary_class_metrics} \\
+\toprule
+Class & Metric & Original & Modified & Change & Status \\
+\midrule
+\endfirsthead
+\multicolumn{6}{c}{{\bfseries \tablename\ \thetable{} -- continued from previous page}} \\
+\toprule
+Class & Metric & Original & Modified & Change & Status \\
+\midrule
+\endhead
+\multirow{4}{*}{Class 0} & Precision & 0.9303 & 0.8979 & -0.0324 & \textcolor{red}{$\downarrow$} \\
+ & Recall & 0.8324 & 0.8332 & +0.0008 & \textcolor{green}{$\uparrow$} \\
+ & F1 & 0.8786 & 0.8643 & -0.0143 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9460 & 0.9322 & -0.0138 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 1} & Precision & 0.8115 & 0.8034 & -0.0081 & \textcolor{red}{$\downarrow$} \\
+ & Recall & 0.9211 & 0.8868 & -0.0343 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.8628 & 0.8430 & -0.0198 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9460 & 0.9329 & -0.0131 & \textcolor{red}{$\downarrow$} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Superclasses Classification}
+\begin{longtable}{lcccccc}
+\caption{Superclasses Classification Class-wise Performance}
+\label{tab:superclass_metrics} \\
+\toprule
+Class & Metric & Original & Modified & Change & Status \\
+\midrule
+\endfirsthead
+\multicolumn{6}{c}{{\bfseries \tablename\ \thetable{} -- continued from previous page}} \\
+\toprule
+Class & Metric & Original & Modified & Change & Status \\
+\midrule
+\endhead
+\multirow{4}{*}{Class 0} & Precision & 0.8409 & 0.7553 & -0.0856 & \textcolor{red}{$\downarrow$} \\
+ & Recall & 0.6714 & 0.6976 & +0.0262 & \textcolor{green}{$\uparrow$} \\
+ & F1 & 0.7466 & 0.7254 & -0.0212 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9218 & 0.9011 & -0.0207 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 1} & Precision & 0.6157 & 0.7609 & +0.1452 & \textcolor{green}{$\uparrow$} \\
+ & Recall & 0.5687 & 0.4008 & -0.1679 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.5913 & 0.5250 & -0.0663 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.8987 & 0.8768 & -0.0219 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 2} & Precision & 0.7996 & 0.8129 & +0.0133 & \textcolor{green}{$\uparrow$} \\
+ & Recall & 0.6964 & 0.6164 & -0.0800 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.7444 & 0.7011 & -0.0433 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9227 & 0.9113 & -0.0114 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 3} & Precision & 0.8150 & 0.8200 & +0.0050 & \textcolor{green}{$\uparrow$} \\
+ & Recall & 0.9242 & 0.8795 & -0.0447 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.8662 & 0.8487 & -0.0175 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9490 & 0.9383 & -0.0107 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 4} & Precision & 0.8079 & 0.7571 & -0.0508 & \textcolor{red}{$\downarrow$} \\
+ & Recall & 0.7505 & 0.7658 & +0.0153 & \textcolor{green}{$\uparrow$} \\
+ & F1 & 0.7781 & 0.7614 & -0.0167 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9325 & 0.9264 & -0.0061 & \textcolor{red}{$\downarrow$} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Subclasses Classification}
+\begin{longtable}{lcccccc}
+\caption{Subclasses Classification Class-wise Performance}
+\label{tab:subclass_metrics} \\
+\toprule
+Class & Metric & Original & Modified & Change & Status \\
+\midrule
+\endfirsthead
+\multicolumn{6}{c}{{\bfseries \tablename\ \thetable{} -- continued from previous page}} \\
+\toprule
+Class & Metric & Original & Modified & Change & Status \\
+\midrule
+\endhead
+\multirow{4}{*}{Class 1} & Precision & 0.8188 & 0.7723 & -0.0465 & \textcolor{red}{$\downarrow$} \\
+ & Recall & 0.7386 & 0.7647 & +0.0261 & \textcolor{green}{$\uparrow$} \\
+ & F1 & 0.7766 & 0.7685 & -0.0081 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9675 & 0.9591 & -0.0084 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 2} & Precision & 0.7937 & 0.8542 & +0.0605 & \textcolor{green}{$\uparrow$} \\
+ & Recall & 0.9259 & 0.7593 & -0.1666 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.8547 & 0.8039 & -0.0508 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9968 & 0.9944 & -0.0024 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 3} & Precision & 0.7619 & 0.8462 & +0.0843 & \textcolor{green}{$\uparrow$} \\
+ & Recall & 0.8889 & 0.8148 & -0.0741 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.8205 & 0.8302 & +0.0097 & \textcolor{green}{$\uparrow$} \\
+ & AUC & 0.9973 & 0.9978 & +0.0005 & \textcolor{green}{$\uparrow$} \\
+\midrule
+\multirow{4}{*}{Class 5} & Precision & 0.6571 & 0.7191 & +0.0620 & \textcolor{green}{$\uparrow$} \\
+ & Recall & 0.7034 & 0.6575 & -0.0459 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.6795 & 0.6869 & +0.0074 & \textcolor{green}{$\uparrow$} \\
+ & AUC & 0.9285 & 0.9120 & -0.0165 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 6} & Precision & 0.6031 & 0.7284 & +0.1253 & \textcolor{green}{$\uparrow$} \\
+ & Recall & 0.7054 & 0.5268 & -0.1786 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.6502 & 0.6114 & -0.0388 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9744 & 0.9741 & -0.0003 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 10} & Precision & 0.7238 & 0.7119 & -0.0119 & \textcolor{red}{$\downarrow$} \\
+ & Recall & 0.7318 & 0.7039 & -0.0279 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.7278 & 0.7079 & -0.0199 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9718 & 0.9702 & -0.0016 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 14} & Precision & 0.7444 & 0.6848 & -0.0596 & \textcolor{red}{$\downarrow$} \\
+ & Recall & 0.4626 & 0.5888 & +0.1262 & \textcolor{green}{$\uparrow$} \\
+ & F1 & 0.5706 & 0.6332 & +0.0626 & \textcolor{green}{$\uparrow$} \\
+ & AUC & 0.9307 & 0.9201 & -0.0106 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 15} & Precision & 0.8101 & 0.8579 & +0.0478 & \textcolor{green}{$\uparrow$} \\
+ & Recall & 0.9304 & 0.8214 & -0.1090 & \textcolor{red}{$\downarrow$} \\
+ & F1 & 0.8661 & 0.8393 & -0.0268 & \textcolor{red}{$\downarrow$} \\
+ & AUC & 0.9497 & 0.9358 & -0.0139 & \textcolor{red}{$\downarrow$} \\
+\midrule
+\multirow{4}{*}{Class 20} & Precision & 0.5846 & 0.5508 & -0.0338 & \textcolor{red}{$\downarrow$} \\
+ & Recall & 0.1712 & 0.2928 & +0.1216 & \textcolor{green}{$\uparrow$} \\
+ & F1 & 0.2648 & 0.3824 & +0.1176 & \textcolor{green}{$\uparrow$} \\
+ & AUC & 0.8797 & 0.8729 & -0.0068 & \textcolor{red}{$\downarrow$} \\
+\bottomrule
+\end{longtable}
+
+\section{Key Findings}
+\begin{itemize}
+    \item \textbf{Model Size}:
+    \begin{itemize}
+        \item 91.4\% total reduction (7MB → 600KB)
+        \item Two-phase optimization: pruning (64.3\%) and quantization (76\%)
+    \end{itemize}
+    
+    \item \textbf{Performance Patterns}:
+    \begin{itemize}
+        \item Binary Classification: Consistent high performance (AUC >0.93)
+        \item Superclasses Classification: Moderate impact (AUC >0.91)
+        \item Subclasses Classification: Significant trade-offs (AUC >0.90)
+    \end{itemize}
+    
+    \item \textbf{Dataset Impact}:
+    \begin{itemize}
+        \item Modified dataset shows more consistent performance
+        \item 5\% missing data has minimal impact on AUC
+        \item Optimization effects vary by classification type
+    \end{itemize}
+\end{itemize}
+
+\section{Recommendations}
+\begin{enumerate}
+    \item Use optimized model for binary classification
+    \item Evaluate trade-offs for superclasses and subclasses
+    \item Consider standard model for superclasses with original data
+    \item Future work should focus on:
+    \begin{itemize}
+        \item Improving recall in complex classifications
+        \item Maintaining binary classification gains
+        \item Reducing performance gaps between datasets
+        \item Exploring adaptive optimization strategies
+    \end{itemize}
+\end{enumerate}
+
+\section{Conclusion}
+The optimization process achieves significant model size reduction (91.4\%) while maintaining strong performance in binary classification. The modified dataset (5\% missing data) shows consistent performance across models, with minimal impact on AUC values. The choice between standard and optimized models should consider the specific classification requirements and the relative importance of precision versus recall. The high AUC scores (>0.90) across all configurations indicate robust discrimination ability, making both models suitable for ECG classification tasks.
+
+\end{document} 
