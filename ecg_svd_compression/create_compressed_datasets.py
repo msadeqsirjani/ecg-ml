@@ -16,8 +16,8 @@ import shutil
 from pathlib import Path
 
 # Configuration
-ORIGINAL_DATA_DIR = '/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/categorized'
-OUTPUT_BASE_DIR = '/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/compressed'
+ORIGINAL_DATA_DIR = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\categorized'
+OUTPUT_BASE_DIR = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\compressed'
 
 # Compression levels (percentage of original signal to retain)
 # Note: These ranks are based on the number of training signals, not signal length
@@ -328,8 +328,8 @@ def create_compression_info_file(output_dir, compression_config):
 def main():
     # Hardcoded configuration
     compression_to_create = 'all'  # Options: '25', '50', '75', 'all'
-    data_dir = './data/categorized'  # Path to categorized PTB-XL dataset (with super subdirectories)
-    output_dir = './data/compressed'  # Base output directory for compressed datasets
+    data_dir = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\categorized'  # Path to categorized PTB-XL dataset (with super subdirectories)
+    output_dir = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\compressed'  # Base output directory for compressed datasets
     
     # Update global variables
     global ORIGINAL_DATA_DIR, OUTPUT_BASE_DIR

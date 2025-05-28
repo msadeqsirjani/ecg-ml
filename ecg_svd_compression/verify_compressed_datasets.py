@@ -13,8 +13,8 @@ import random
 from pathlib import Path
 
 # Configuration
-ORIGINAL_DATA_DIR = '/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/categorized'
-COMPRESSED_BASE_DIR = '/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/compressed'
+ORIGINAL_DATA_DIR = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\categorized'
+COMPRESSED_BASE_DIR = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\compressed'
 NUM_SAMPLES = 5  # Number of records to sample for verification
 SAMPLING_RATES = [100, 500]  # Both sampling rates
 COMPRESSION_LEVELS = ['25_percent', '50_percent', '75_percent']  # Compression levels to verify
