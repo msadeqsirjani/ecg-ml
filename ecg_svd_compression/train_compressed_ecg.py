@@ -23,6 +23,7 @@ from src.model.ecg_model import create_ecg_model
 from src.evaluation.metrics import ECGEvaluator
 
 # GPU Configuration
+print("Checking for GPU availability...")
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
@@ -30,15 +31,21 @@ if gpus:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
         logical_gpus = tf.config.list_logical_devices('GPU')
-        print(f"{len(gpus)} Physical GPUs, {len(logical_gpus)} Logical GPUs")
+        print(f"Found {len(gpus)} Physical GPUs, {len(logical_gpus)} Logical GPUs")
+        print("GPU devices:", gpus)
     except RuntimeError as e:
         # Memory growth must be set before GPUs have been initialized
-        print(e)
+        print("Error configuring GPU:", e)
 else:
     print("No GPU devices found. Training will run on CPU.")
+    print("Note: If you have an NVIDIA GPU, please ensure:")
+    print("1. NVIDIA GPU drivers are properly installed")
+    print("2. CUDA Toolkit is installed")
+    print("3. cuDNN is installed")
+    print("4. TensorFlow-GPU is installed correctly")
 
 # Set mixed precision policy for better performance
-tf.keras.mixed_precision.set_global_policy('mixed_float16')
+# tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
 # Configuration
 CLASSIFICATION_TYPES = {"binary": 2, "super": 5, "sub": 23}
@@ -373,7 +380,7 @@ def save_training_history(history, results_dir: Path, compression_level: str):
 def main():
     """Main training function for compressed ECG models."""
     # Configuration
-    data_path = "/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/processed/ptb-xl-compressed"
+    data_path = r"C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\processed\ptb-xl-compressed"
     classification_types = ["super"]  # Focus on super classification
     lead_configs = ["all-leads"]  # Use all-leads configuration
     compression_levels = COMPRESSION_LEVELS  # Train on all compression levels
