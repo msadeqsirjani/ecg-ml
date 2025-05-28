@@ -11,6 +11,24 @@ import matplotlib.pyplot as plt
 from model.ecg_model import create_ecg_model
 from evaluation.metrics import ECGEvaluator
 
+# GPU Configuration
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        # Currently, memory growth needs to be the same across GPUs
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logical_gpus = tf.config.list_logical_devices('GPU')
+        print(f"{len(gpus)} Physical GPUs, {len(logical_gpus)} Logical GPUs")
+    except RuntimeError as e:
+        # Memory growth must be set before GPUs have been initialized
+        print(e)
+else:
+    print("No GPU devices found. Training will run on CPU.")
+
+# Set mixed precision policy for better performance
+tf.keras.mixed_precision.set_global_policy('mixed_float16')
+
 # Configuration
 CLASSIFICATION_TYPES = {"binary": 2, "super": 5, "sub": 23}
 
@@ -97,16 +115,17 @@ def train_model(
     num_classes = CLASSIFICATION_TYPES[classification_type]
     logger.info(f"Number of output classes: {num_classes}")
 
-    model = create_ecg_model(input_shape, num_classes)
-    
-    
-    
-    # Compile model
-    model.compile(
-        optimizer=optimizers.Adam(learning_rate=0.0005),
-        loss=losses.BinaryFocalCrossentropy(),
-        metrics=[metrics.BinaryAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
-    )
+    # Create model with GPU strategy
+    strategy = tf.distribute.MirroredStrategy()
+    with strategy.scope():
+        model = create_ecg_model(input_shape, num_classes)
+        
+        # Compile model with mixed precision
+        model.compile(
+            optimizer=optimizers.Adam(learning_rate=0.0005),
+            loss=losses.BinaryFocalCrossentropy(),
+            metrics=[metrics.BinaryAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
+        )
 
     # Callbacks
     callbacks_list = [
@@ -114,15 +133,15 @@ def train_model(
         callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6),
     ]
 
-    # Train model
+    # Train model with increased batch size for GPU
     logger.info("Starting model training...")
     history = model.fit(
         x_train,
         y_train,
         validation_split=0.12,
         epochs=100,
-        batch_size=32,
-        callbacks=callbacks_list,
+        batch_size=64,  # Increased batch size for GPU
+        callbacks=callbacks_list
     )
 
     return model, history

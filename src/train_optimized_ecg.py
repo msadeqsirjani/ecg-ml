@@ -20,6 +20,24 @@ from model.micro_ecg_model import (
 
 from evaluation.metrics import ECGEvaluator
 
+# GPU Configuration
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        # Currently, memory growth needs to be the same across GPUs
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logical_gpus = tf.config.list_logical_devices('GPU')
+        print(f"{len(gpus)} Physical GPUs, {len(logical_gpus)} Logical GPUs")
+    except RuntimeError as e:
+        # Memory growth must be set before GPUs have been initialized
+        print(e)
+else:
+    print("No GPU devices found. Training will run on CPU.")
+
+# Set mixed precision policy for better performance
+tf.keras.mixed_precision.set_global_policy('mixed_float16')
+
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 # Configuration
@@ -141,50 +159,53 @@ def train_pruned_quantized_model(
     pretrained_weights_path: str,
     logger: logging.Logger,
     fine_tune_epochs: int = 20,
-    batch_size: int = 32,
+    batch_size: int = 64,  # Increased batch size for GPU
     learning_rate: float = 0.0001,
-    final_sparsity: float = 0.8 # Higher sparsity for more aggressive pruning
+    final_sparsity: float = 0.8
 ) -> tuple:
     """Load a pre-trained model, apply pruning, fine-tune, and then quantize it."""
     logger.info(f"Input data shape: {x_train.shape}")
     input_shape = (x_train.shape[1], x_train.shape[2], x_train.shape[3])
     num_classes = CLASSIFICATION_TYPES[classification_type]
 
-    # 1. Create the base model structure
-    base_model = create_ecg_model(input_shape, num_classes)
-    logger.info("Base model structure created.")
+    # Create model with GPU strategy
+    strategy = tf.distribute.MirroredStrategy()
+    with strategy.scope():
+        # 1. Create the base model structure
+        base_model = create_ecg_model(input_shape, num_classes)
+        logger.info("Base model structure created.")
 
-    # 2. Load pre-trained weights
-    weights_path = Path(pretrained_weights_path)
-    if weights_path.exists():
-        logger.info(f"Loading pre-trained weights from {weights_path}...")
-        base_model.load_weights(str(weights_path))
-        logger.info("Pre-trained weights loaded.")
-    else:
-        logger.warning(f"Pre-trained weights not found at {weights_path}. Starting with random weights.")
+        # 2. Load pre-trained weights
+        weights_path = Path(pretrained_weights_path)
+        if weights_path.exists():
+            logger.info(f"Loading pre-trained weights from {weights_path}...")
+            base_model.load_weights(str(weights_path))
+            logger.info("Pre-trained weights loaded.")
+        else:
+            logger.warning(f"Pre-trained weights not found at {weights_path}. Starting with random weights.")
 
-    # 3. Set pruning parameters
-    pruning_params = {
-        'pruning_schedule': sparsity.PolynomialDecay(
-            initial_sparsity=0.0,
-            final_sparsity=final_sparsity,  # Increased for more aggressive pruning
-            begin_step=0,
-            end_step=fine_tune_epochs * (len(x_train) // batch_size)
+        # 3. Set pruning parameters
+        pruning_params = {
+            'pruning_schedule': sparsity.PolynomialDecay(
+                initial_sparsity=0.0,
+                final_sparsity=final_sparsity,
+                begin_step=0,
+                end_step=fine_tune_epochs * (len(x_train) // batch_size)
+            )
+        }
+        
+        # 4. Apply pruning wrapper
+        logger.info("Applying pruning wrapper...")
+        model_to_prune = apply_pruning(base_model, pruning_params)
+        logger.info("Pruning wrapper applied.")
+
+        # 5. Compile the pruned model for fine-tuning
+        model_to_prune.compile(
+            optimizer=optimizers.Adam(learning_rate=learning_rate),
+            loss=losses.BinaryCrossentropy(),
+            metrics=[metrics.BinaryAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
         )
-    }
-    
-    # 4. Apply pruning wrapper
-    logger.info("Applying pruning wrapper...")
-    model_to_prune = apply_pruning(base_model, pruning_params)
-    logger.info("Pruning wrapper applied.")
-
-    # 5. Compile the pruned model for fine-tuning
-    model_to_prune.compile(
-        optimizer=optimizers.Adam(learning_rate=learning_rate),
-        loss=losses.BinaryCrossentropy(),
-        metrics=[metrics.BinaryAccuracy(), metrics.AUC(curve="ROC", multi_label=True)],
-    )
-    logger.info(f"Pruned model compiled with Adam optimizer (LR={learning_rate}).")
+        logger.info(f"Pruned model compiled with Adam optimizer (LR={learning_rate}).")
 
     # 6. Define Callbacks for fine-tuning (including pruning)
     callbacks_list = [
@@ -202,7 +223,7 @@ def train_pruned_quantized_model(
         ),
     ]
 
-    # 7. Fine-tune the pruned model
+    # 7. Fine-tune the pruned model with GPU optimization
     logger.info(f"Starting model fine-tuning for {fine_tune_epochs} epochs...")
     history = model_to_prune.fit(
         x_train,
