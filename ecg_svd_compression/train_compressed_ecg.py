@@ -4,6 +4,10 @@ Train ECG models on compressed datasets.
 This script trains models on SVD-compressed ECG data for different compression levels.
 """
 
+# Set matplotlib backend to non-interactive 'Agg' before any other imports
+import matplotlib
+matplotlib.use('Agg')
+
 import os
 import numpy as np
 from pathlib import Path
