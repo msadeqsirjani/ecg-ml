@@ -1,251 +1,183 @@
 #!/usr/bin/env python3
 """
-Create compressed ECG datasets using SVD compression.
-This script creates 3 new datasets containing 25%, 50%, and 75% of the original signal
-using SVD compression, maintaining the PTB-XL folder structure.
+Create compressed ECG datasets using sampling-based compression.
+This script creates 3 new datasets containing 25%, 50%, and 75% of the original points,
+storing both sampled and reconstructed signals.
 """
 
 import os
 import wfdb
 import numpy as np
 import pandas as pd
-from scipy.linalg import qr
-from scipy.signal import correlate
+from scipy.interpolate import interp1d
 from tqdm import tqdm
 import shutil
 from pathlib import Path
+import json
+from colorama import init, Fore, Style
+import time
+from datetime import datetime, timedelta
+
+# Initialize colorama for Windows support
+init()
+
+def print_header(text):
+    """Print a formatted header."""
+    print(f"\n{Fore.CYAN}{'='*80}")
+    print(f"{Fore.CYAN}  {text}")
+    print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
+
+def print_success(text):
+    """Print a success message."""
+    print(f"{Fore.GREEN}✓ {text}{Style.RESET_ALL}")
+
+def print_warning(text):
+    """Print a warning message."""
+    print(f"{Fore.YELLOW}⚠ {text}{Style.RESET_ALL}")
+
+def print_error(text):
+    """Print an error message."""
+    print(f"{Fore.RED}✗ {text}{Style.RESET_ALL}")
+
+def print_info(text):
+    """Print an info message."""
+    print(f"{Fore.BLUE}ℹ {text}{Style.RESET_ALL}")
+
+def format_time(seconds):
+    """Format time in a human-readable way."""
+    return str(timedelta(seconds=int(seconds)))
+
+class ProcessingStats:
+    """Class to track processing statistics."""
+    def __init__(self):
+        self.total_processed = 0
+        self.total_errors = 0
+        self.start_time = time.time()
+        self.sampling_stats = {100: {'processed': 0, 'errors': 0},
+                             500: {'processed': 0, 'errors': 0}}
+
+    def update(self, sampling_rate, success=True):
+        if success:
+            self.total_processed += 1
+            self.sampling_stats[sampling_rate]['processed'] += 1
+        else:
+            self.total_errors += 1
+            self.sampling_stats[sampling_rate]['errors'] += 1
+
+    def print_summary(self):
+        elapsed_time = time.time() - self.start_time
+        print_header("Processing Summary")
+        print_info(f"Total time elapsed: {format_time(elapsed_time)}")
+        print_info(f"Total records processed: {self.total_processed}")
+        if self.total_errors > 0:
+            print_warning(f"Total errors encountered: {self.total_errors}")
+        
+        for rate in [100, 500]:
+            stats = self.sampling_stats[rate]
+            print(f"\n{rate}Hz Records:")
+            print_success(f"  Processed: {stats['processed']}")
+            if stats['errors'] > 0:
+                print_warning(f"  Errors: {stats['errors']}")
+            success_rate = (stats['processed'] / (stats['processed'] + stats['errors'])) * 100 if stats['processed'] + stats['errors'] > 0 else 0
+            print_info(f"  Success rate: {success_rate:.1f}%")
 
 # Configuration
 ORIGINAL_DATA_DIR = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\categorized'
 OUTPUT_BASE_DIR = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\compressed'
 
-# Compression levels (percentage of original signal to retain)
-# Note: These ranks are based on the number of training signals, not signal length
+# Compression levels (percentage of points to keep)
 COMPRESSION_LEVELS = {
-    '25': {'rank': 100, 'name': '25_percent'},   # Use 10% of available components
-    '50': {'rank': 50, 'name': '50_percent'},    # Use 5% of available components  
-    '75': {'rank': 25, 'name': '75_percent'}     # Use 2.5% of available components
+    '25': {'percent': 25, 'name': '25_percent'},
+    '50': {'percent': 50, 'name': '50_percent'},
+    '75': {'percent': 75, 'name': '75_percent'}
 }
 
-def align_signals(signals):
-    """Align signals using cross-correlation"""
-    if signals.shape[1] == 0:
-        return signals
+def sample_and_reconstruct_signal(signal, percent_to_keep):
+    """
+    Sample signal points and reconstruct using interpolation.
     
-    ref = signals[:, 0]  # Use first signal as reference
-    aligned = []
-    for s in signals.T:
-        corr = correlate(ref, s, mode='same')
-        shift = np.argmax(corr) - len(ref)//2
-        aligned.append(np.roll(s, -shift))
-    return np.column_stack(aligned)
-
-def load_signals_for_training(data_dir, num_records, sampling_rate=500, superclass='NORM'):
-    """Load signals from all numbered directories for a superclass"""
-    signals = []
-    record_prefix = 'hr' if sampling_rate == 500 else 'lr'
-    base_path = os.path.join(data_dir, f"records{sampling_rate}")
+    Args:
+        signal: Original signal array
+        percent_to_keep: Percentage of points to keep (25, 50, or 75)
     
-    if not os.path.exists(base_path):
-        print(f"Warning: {base_path} does not exist")
-        return None, None
+    Returns:
+        tuple: (sampled_signal, reconstructed_signal)
+        - sampled_signal: Signal with only selected points (others set to 0)
+        - reconstructed_signal: Interpolated signal using the sampled points
+    """
+    signal_length = len(signal)
+    num_points_to_keep = int(signal_length * (percent_to_keep / 100))
     
-    # Get all numbered directories (00000-21000)
-    numbered_dirs = sorted([d for d in os.listdir(base_path)
-                          if len(d) == 5 and d.isdigit()])
+    # Create evenly spaced indices for sampling
+    step = signal_length // num_points_to_keep
+    sample_indices = np.arange(0, signal_length, step)[:num_points_to_keep]
     
-    print(f"Loading {num_records} {superclass} records from {len(numbered_dirs)} directories...")
+    # Create sampled signal (zeros with only selected points)
+    sampled_signal = np.zeros_like(signal)
+    sampled_signal[sample_indices] = signal[sample_indices]
     
-    # First pass: determine the most common signal length
-    signal_lengths = []
-    temp_signals = []
+    # Create reconstructed signal using interpolation
+    # Get non-zero indices and values
+    valid_indices = sample_indices
+    valid_values = signal[valid_indices]
     
-    for dir_num in numbered_dirs:
-        superclass_path = os.path.join(base_path, dir_num, 'super', superclass)
-        if not os.path.exists(superclass_path):
-            continue
-        
-        record_files = [f for f in os.listdir(superclass_path)
-                      if f.endswith('.hea')][:min(50, num_records)]  # Sample first 50 to determine length
-        
-        for record_file in record_files:
-            record_id = record_file.split('_')[0]
-            record_path = os.path.join(superclass_path, f"{record_id}_{record_prefix}")
-            try:
-                record = wfdb.rdrecord(record_path)
-                signal = record.p_signal[:, 1]  # Lead II
-                signal_lengths.append(len(signal))
-                temp_signals.append((signal, record_path))
-                if len(temp_signals) >= 50:
-                    break
-            except Exception as e:
-                continue
-        if len(temp_signals) >= 50:
-            break
+    # Create interpolation function
+    f = interp1d(valid_indices, valid_values, kind='cubic', 
+                 bounds_error=False, fill_value="extrapolate")
     
-    if not signal_lengths:
-        print(f"No valid signals found for {superclass}")
-        return None, None
+    # Generate reconstructed signal
+    all_indices = np.arange(signal_length)
+    reconstructed_signal = f(all_indices)
     
-    # Use the most common signal length
-    target_length = max(set(signal_lengths), key=signal_lengths.count)
-    print(f"Target signal length for {superclass}: {target_length} samples")
-    
-    # Second pass: load signals with standardized length
-    for dir_num in tqdm(numbered_dirs, desc=f"Loading {superclass} signals"):
-        superclass_path = os.path.join(base_path, dir_num, 'super', superclass)
-        if not os.path.exists(superclass_path):
-            continue
-        
-        # Get available records in this directory
-        record_files = [f for f in os.listdir(superclass_path)
-                      if f.endswith('.hea')][:num_records - len(signals)]
-        
-        for record_file in record_files:
-            record_id = record_file.split('_')[0]
-            record_path = os.path.join(superclass_path, f"{record_id}_{record_prefix}")
-            try:
-                record = wfdb.rdrecord(record_path)
-                signal = record.p_signal[:, 1]  # Lead II
-                
-                # Standardize signal length
-                if len(signal) >= target_length:
-                    signal = signal[:target_length]  # Truncate if longer
-                else:
-                    # Pad with zeros if shorter
-                    signal = np.pad(signal, (0, target_length - len(signal)), mode='constant')
-                
-                signals.append(signal / np.max(np.abs(signal)))  # Normalized
-                if len(signals) >= num_records:
-                    break
-            except Exception as e:
-                print(f"Skipping {record_path}: {str(e)}")
-                continue
-        if len(signals) >= num_records:
-            break
-    
-    if not signals:
-        return None, None
-    
-    X = np.column_stack(signals)
-    return align_signals(X), target_length
-
-def train_svd_model(X, rank=50):
-    """Train SVD model with regularization"""
-    U, S, _ = np.linalg.svd(X, full_matrices=False)
-    
-    # Ensure rank doesn't exceed the number of available components
-    max_rank = min(X.shape[0], X.shape[1])
-    effective_rank = min(rank, max_rank)
-    
-    if effective_rank != rank:
-        print(f"Warning: Requested rank {rank} reduced to {effective_rank} due to data constraints")
-    
-    U_r = U[:, :effective_rank]
-    Q, R, pivots = qr(U_r.T, pivoting=True)
-    C = np.zeros((effective_rank, X.shape[0]))
-    C[np.arange(effective_rank), pivots[:effective_rank]] = 1
-    
-    return U_r, C, pivots[:effective_rank]
-
-def reconstruct_signal(test_signal, U_r, C, target_length):
-    """Reconstruct signal with regularization"""
-    # Standardize test signal length to match training data
-    original_length = len(test_signal)
-    if len(test_signal) >= target_length:
-        standardized_signal = test_signal[:target_length]  # Truncate if longer
-    else:
-        # Pad with zeros if shorter
-        standardized_signal = np.pad(test_signal, (0, target_length - len(test_signal)), mode='constant')
-    
-    # Reconstruct using SVD
-    y = C @ standardized_signal
-    a = np.linalg.lstsq(C @ U_r + 1e-6*np.eye(U_r.shape[1]), y, rcond=None)[0]
-    reconstructed = U_r @ a
-    
-    # Restore original signal length
-    if original_length >= target_length:
-        return reconstructed  # Already correct length
-    else:
-        return reconstructed[:original_length]  # Truncate to original length
-
-def create_output_directory_structure(output_dir):
-    """Create the output directory structure mirroring PTB-XL"""
-    # Create records100 and records500 directories
-    for rate in [100, 500]:
-        records_dir = os.path.join(output_dir, f"records{rate}")
-        os.makedirs(records_dir, exist_ok=True)
-        
-        # Create numbered directories (00000-21000)
-        for dir_num in range(22):
-            folder_name = str(dir_num * 1000).zfill(5)
-            target_dir = os.path.join(records_dir, folder_name)
-            os.makedirs(target_dir, exist_ok=True)
+    return sampled_signal, reconstructed_signal
 
 def compress_and_save_records(data_dir, output_dir, compression_config):
-    """Compress and save all records using SVD for both 100Hz and 500Hz"""
-    rank = compression_config['rank']
+    """Compress and save all records using sampling-based compression."""
+    stats = ProcessingStats()
+    percent_to_keep = compression_config['percent']
     
-    # Create output directory structure for both sampling rates
-    create_output_directory_structure(output_dir)
+    print_header(f"Starting Compression Process - {percent_to_keep}% compression")
+    print_info(f"Input directory: {data_dir}")
+    print_info(f"Output directory: {output_dir}")
+    
+    # Create base output directories for sampled and reconstructed data
+    output_sampled_dir = os.path.join(output_dir, 'sampled')
+    output_reconstructed_dir = os.path.join(output_dir, 'reconstructed')
     
     # Process each sampling rate
     for sampling_rate in [100, 500]:
         record_prefix = 'lr' if sampling_rate == 100 else 'hr'
-        print(f"\nProcessing {sampling_rate}Hz records")
+        print_header(f"Processing {sampling_rate}Hz Records")
         
-        # Get all superclasses
         base_path = os.path.join(data_dir, f"records{sampling_rate}")
         if not os.path.exists(base_path):
-            print(f"Warning: {base_path} does not exist")
+            print_warning(f"Directory not found: {base_path}")
             continue
         
-        superclasses = set()
+        # Get all numbered directories
         numbered_dirs = [d for d in os.listdir(base_path) if len(d) == 5 and d.isdigit()]
         
-        for dir_num in numbered_dirs:
-            super_path = os.path.join(base_path, dir_num, 'super')
-            if os.path.exists(super_path):
-                superclasses.update([d for d in os.listdir(super_path) 
-                                   if os.path.isdir(os.path.join(super_path, d))])
-        
-        print(f"Found superclasses: {sorted(superclasses)}")
-        
-        # Train SVD models for each superclass
-        svd_models = {}
-        for superclass in sorted(superclasses):
-            print(f"\nTraining SVD model for superclass: {superclass}")
-            
-            # Load training data (use 1000 records for training)
-            X, target_length = load_signals_for_training(data_dir, 1000, sampling_rate, superclass)
-            if X is None:
-                print(f"No training data found for {superclass}")
-                continue
-            
-            # Train SVD model
-            U_r, C, pivots = train_svd_model(X, rank)
-            svd_models[superclass] = (U_r, C, pivots, target_length)
-            print(f"Trained SVD model for {superclass} with rank {rank}, signal length {target_length}")
-        
-        # Process all records
-        total_processed = 0
-        
-        for dir_num in tqdm(numbered_dirs, desc=f"Processing {sampling_rate}Hz directories"):
+        # Process each numbered directory with progress bar
+        for dir_num in tqdm(numbered_dirs, 
+                           desc=f"{Fore.BLUE}Processing directories{Style.RESET_ALL}",
+                           bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'):
             super_path = os.path.join(base_path, dir_num, 'super')
             if not os.path.exists(super_path):
                 continue
             
-            # Create output directory for this numbered folder
-            output_dir_path = os.path.join(output_dir, f"records{sampling_rate}", dir_num)
+            # Create output directories for both sampled and reconstructed data
+            sampled_records_dir = os.path.join(output_sampled_dir, f"records{sampling_rate}", dir_num)
+            reconstructed_records_dir = os.path.join(output_reconstructed_dir, f"records{sampling_rate}", dir_num)
+            os.makedirs(sampled_records_dir, exist_ok=True)
+            os.makedirs(reconstructed_records_dir, exist_ok=True)
             
+            # Process each superclass directory
             for superclass in os.listdir(super_path):
                 superclass_path = os.path.join(super_path, superclass)
-                if not os.path.isdir(superclass_path) or superclass not in svd_models:
+                if not os.path.isdir(superclass_path):
                     continue
                 
-                U_r, C, pivots, target_length = svd_models[superclass]
-                
-                # Process each record in this superclass
+                # Process each record
                 record_files = [f for f in os.listdir(superclass_path) if f.endswith('.hea')]
                 
                 for record_file in record_files:
@@ -255,44 +187,87 @@ def compress_and_save_records(data_dir, output_dir, compression_config):
                     try:
                         # Load original record
                         record = wfdb.rdrecord(record_path)
-                        original_signal = record.p_signal[:, 1]  # Lead II
-                        normalized_signal = original_signal / np.max(np.abs(original_signal))
                         
-                        # Reconstruct using SVD
-                        reconstructed_signal = reconstruct_signal(normalized_signal, U_r, C, target_length)
+                        # Process each lead
+                        sampled_signal = np.zeros_like(record.p_signal)
+                        reconstructed_signal = np.zeros_like(record.p_signal)
                         
-                        # Denormalize
-                        reconstructed_signal = reconstructed_signal * np.max(np.abs(original_signal))
+                        for lead in range(record.p_signal.shape[1]):
+                            original_signal = record.p_signal[:, lead]
+                            sampled, reconstructed = sample_and_reconstruct_signal(
+                                original_signal, percent_to_keep
+                            )
+                            sampled_signal[:, lead] = sampled
+                            reconstructed_signal[:, lead] = reconstructed
                         
-                        # Create new signal matrix (keep all leads, but compress Lead II)
-                        new_signal = record.p_signal.copy()
-                        new_signal[:, 1] = reconstructed_signal
-                        
-                        # Save compressed record directly in the numbered folder
-                        output_record_name = f"{record_id}_{record_prefix}"
-                        
-                        # Create new record with compressed signal
-                        # Save current directory and change to output directory
+                        # Save sampled signal
                         current_dir = os.getcwd()
                         try:
-                            os.chdir(output_dir_path)
-                            wfdb.wrsamp(record_name=output_record_name,
-                                      fs=record.fs,
-                                      units=record.units,
-                                      sig_name=record.sig_name,
-                                      p_signal=new_signal,
-                                      fmt=record.fmt)
+                            os.chdir(sampled_records_dir)
+                            # Use the exact same filename format as the original
+                            wfdb.wrsamp(
+                                record_name=f"{record_id}_{record_prefix}",
+                                fs=record.fs,
+                                units=record.units,
+                                sig_name=record.sig_name,
+                                p_signal=sampled_signal,
+                                fmt=record.fmt
+                            )
+                            # Copy the header file with exact same name
+                            shutil.copy2(
+                                os.path.join(superclass_path, record_file),
+                                os.path.join(sampled_records_dir, record_file)
+                            )
                         finally:
-                            # Always change back to original directory
                             os.chdir(current_dir)
                         
-                        total_processed += 1
+                        # Save reconstructed signal
+                        try:
+                            os.chdir(reconstructed_records_dir)
+                            # Use the exact same filename format as the original
+                            wfdb.wrsamp(
+                                record_name=f"{record_id}_{record_prefix}",
+                                fs=record.fs,
+                                units=record.units,
+                                sig_name=record.sig_name,
+                                p_signal=reconstructed_signal,
+                                fmt=record.fmt
+                            )
+                            # Copy the header file with exact same name
+                            shutil.copy2(
+                                os.path.join(superclass_path, record_file),
+                                os.path.join(reconstructed_records_dir, record_file)
+                            )
+                        finally:
+                            os.chdir(current_dir)
+                        
+                        stats.update(sampling_rate, success=True)
                         
                     except Exception as e:
-                        print(f"Error processing {record_path}: {str(e)}")
+                        print_error(f"Error processing {record_path}: {str(e)}")
+                        stats.update(sampling_rate, success=False)
                         continue
-        
-        print(f"Total {sampling_rate}Hz records processed: {total_processed}")
+    
+    # Print final statistics
+    stats.print_summary()
+
+def create_output_directory_structure(output_dir):
+    """Create the output directory structure for both sampled and reconstructed data."""
+    # Create base directories for sampled and reconstructed data
+    sampled_dir = os.path.join(output_dir, 'sampled')
+    reconstructed_dir = os.path.join(output_dir, 'reconstructed')
+    
+    # Create records100 and records500 directories for both versions
+    for base_dir in [sampled_dir, reconstructed_dir]:
+        for rate in [100, 500]:
+            records_dir = os.path.join(base_dir, f"records{rate}")
+            os.makedirs(records_dir, exist_ok=True)
+            
+            # Create numbered directories (00000-21000)
+            for dir_num in range(22):
+                folder_name = str(dir_num * 1000).zfill(5)
+                target_dir = os.path.join(records_dir, folder_name)
+                os.makedirs(target_dir, exist_ok=True)
 
 def copy_metadata_files(output_dir):
     """Copy metadata files from original dataset"""
@@ -312,77 +287,82 @@ def create_compression_info_file(output_dir, compression_config):
     """Create a file with compression information"""
     info = {
         'compression_level': compression_config['name'],
-        'rank': compression_config['rank'],
+        'percent_kept': compression_config['percent'],
         'sampling_rates': '100Hz and 500Hz',
-        'description': f"SVD compressed dataset retaining {compression_config['name'].replace('_', ' ')} of original signal",
-        'original_dataset': ORIGINAL_DATA_DIR
+        'description': f"Sampling-based compression keeping {compression_config['percent']}% of points",
+        'original_dataset': ORIGINAL_DATA_DIR,
+        'compression_method': 'uniform sampling with cubic interpolation',
+        'versions': {
+            'sampled': 'Original signal with only sampled points (others set to zero)',
+            'reconstructed': 'Signal reconstructed using cubic interpolation'
+        }
     }
     
-    info_path = os.path.join(output_dir, 'compression_info.txt')
+    info_path = os.path.join(output_dir, 'compression_info.json')
     with open(info_path, 'w') as f:
-        for key, value in info.items():
-            f.write(f"{key}: {value}\n")
+        json.dump(info, f, indent=4)
     
     print(f"Created compression info file: {info_path}")
 
 def main():
-    # Hardcoded configuration
+    """Main function to process all compression levels."""
+    print_header("ECG Dataset Compression Tool")
+    
+    # Configuration
     compression_to_create = 'all'  # Options: '25', '50', '75', 'all'
-    data_dir = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\categorized'  # Path to categorized PTB-XL dataset (with super subdirectories)
-    output_dir = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\compressed'  # Base output directory for compressed datasets
+    data_dir = ORIGINAL_DATA_DIR
+    output_dir = OUTPUT_BASE_DIR
     
-    # Update global variables
-    global ORIGINAL_DATA_DIR, OUTPUT_BASE_DIR
-    ORIGINAL_DATA_DIR = data_dir
-    OUTPUT_BASE_DIR = output_dir
+    start_time = time.time()
     
-    # Check if original dataset exists
-    if not os.path.exists(ORIGINAL_DATA_DIR):
-        print(f"Error: Original dataset not found at {ORIGINAL_DATA_DIR}")
-        print("Please update the 'data_dir' variable in main() to point to your PTB-XL dataset")
-        return
-    
-    # Determine which compression levels to create
-    if compression_to_create == 'all':
-        levels_to_create = COMPRESSION_LEVELS.keys()
-    else:
-        levels_to_create = [compression_to_create]
-    
-    print("ECG Dataset SVD Compression")
-    print("=" * 50)
-    print(f"Creating compressed datasets for levels: {list(levels_to_create)}")
-    print(f"Original dataset: {ORIGINAL_DATA_DIR}")
-    print(f"Output directory: {OUTPUT_BASE_DIR}")
-    print("=" * 50)
-    
-    for level in levels_to_create:
-        compression_config = COMPRESSION_LEVELS[level]
-        output_dataset_dir = os.path.join(OUTPUT_BASE_DIR, f"ptb-xl-{compression_config['name']}")
+    try:
+        # Check if original dataset exists
+        if not os.path.exists(data_dir):
+            print_error(f"Original dataset not found at {data_dir}")
+            return
         
-        print(f"\n{'='*60}")
-        print(f"Creating {compression_config['name']} compressed dataset")
-        print(f"Rank: {compression_config['rank']}")
-        print(f"Output directory: {output_dataset_dir}")
-        print(f"{'='*60}")
+        # Determine which compression levels to create
+        if compression_to_create == 'all':
+            levels_to_create = COMPRESSION_LEVELS.keys()
+        else:
+            levels_to_create = [compression_to_create]
         
-        # Create output directory
-        os.makedirs(output_dataset_dir, exist_ok=True)
+        print_info("Configuration:")
+        print_info(f"  Data directory: {data_dir}")
+        print_info(f"  Output directory: {output_dir}")
+        print_info(f"  Compression levels: {list(levels_to_create)}")
         
-        # Compress and save records for both sampling rates
-        compress_and_save_records(ORIGINAL_DATA_DIR, output_dataset_dir, compression_config)
+        for level in levels_to_create:
+            compression_config = COMPRESSION_LEVELS[level]
+            output_dataset_dir = os.path.join(output_dir, f"ptb-xl-{compression_config['name']}")
+            
+            print_header(f"Processing {compression_config['name']} Dataset")
+            print_info(f"Keeping {compression_config['percent']}% of points")
+            print_info(f"Output directory: {output_dataset_dir}")
+            
+            # Create output directory
+            os.makedirs(output_dataset_dir, exist_ok=True)
+            
+            # Compress and save records
+            compress_and_save_records(data_dir, output_dataset_dir, compression_config)
+            
+            # Copy metadata files
+            copy_metadata_files(output_dataset_dir)
+            
+            # Create compression info file
+            create_compression_info_file(output_dataset_dir, compression_config)
+            
+            print_success(f"Completed {compression_config['name']} compressed dataset")
         
-        # Copy metadata files
-        copy_metadata_files(output_dataset_dir)
+        print_header("Processing Complete")
+        print_success("All compressed datasets created successfully!")
+        print_info(f"Output location: {output_dir}")
         
-        # Create compression info file
-        create_compression_info_file(output_dataset_dir, compression_config)
-        
-        print(f"Completed {compression_config['name']} compressed dataset")
-    
-    print(f"\n{'='*60}")
-    print("All compressed datasets created successfully!")
-    print(f"Output location: {OUTPUT_BASE_DIR}")
-    print("=" * 60)
+    except Exception as e:
+        print_error(f"An error occurred during processing: {str(e)}")
+    finally:
+        elapsed_time = time.time() - start_time
+        print_info(f"\nTotal execution time: {format_time(elapsed_time)}")
 
 if __name__ == "__main__":
     main() 
