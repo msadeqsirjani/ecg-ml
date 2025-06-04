@@ -7,35 +7,31 @@ Compression Level: 25_percent
 Sampling Rate: 100Hz
 ~~~~~~~~~~~~~~~~~~~~
 Number of samples: 5
-Average MSE: 0.085558
-MSE Range: 0.027864 - 0.162337
-Average Max Absolute Difference: 1.293004
-Compression Ratio: 90.0%
-Rank: 100
+Average MSE (Reconstructed): 0.263686
+MSE Range (Reconstructed): 0.158037 - 0.420296
+Average Max Absolute Difference (Reconstructed): 0.922525
 
 Individual Results:
-  10532 (MI): MSE=0.102554, Max_Diff=1.503806
-  00515 (MI): MSE=0.027864, Max_Diff=0.688288
-  00468 (MI): MSE=0.081338, Max_Diff=1.573352
-  10890 (MI): MSE=0.053695, Max_Diff=1.298537
-  00476 (HYP): MSE=0.162337, Max_Diff=1.401038
+  05492_lr (unknown): MSE (Reconstructed)=0.158037, Max_Diff (Reconstructed)=0.925901
+  00239_lr (unknown): MSE (Reconstructed)=0.285419, Max_Diff (Reconstructed)=0.874539
+  00568_lr (unknown): MSE (Reconstructed)=0.264550, Max_Diff (Reconstructed)=0.958087
+  05174_lr (unknown): MSE (Reconstructed)=0.420296, Max_Diff (Reconstructed)=0.939493
+  04443_lr (unknown): MSE (Reconstructed)=0.190129, Max_Diff (Reconstructed)=0.914606
 
 
 Sampling Rate: 500Hz
 ~~~~~~~~~~~~~~~~~~~~
 Number of samples: 5
-Average MSE: 0.263776
-MSE Range: 0.008762 - 1.149384
-Average Max Absolute Difference: 1.626933
-Compression Ratio: 98.0%
-Rank: 100
+Average MSE (Reconstructed): 0.310363
+MSE Range (Reconstructed): 0.228319 - 0.399040
+Average Max Absolute Difference (Reconstructed): 0.905864
 
 Individual Results:
-  00234 (STTC): MSE=0.024253, Max_Diff=0.804143
-  10991 (HYP): MSE=1.149384, Max_Diff=4.572159
-  00357 (STTC): MSE=0.008762, Max_Diff=0.516295
-  10521 (MI): MSE=0.112230, Max_Diff=1.437923
-  00234 (MI): MSE=0.024253, Max_Diff=0.804143
+  10983_hr (unknown): MSE (Reconstructed)=0.248900, Max_Diff (Reconstructed)=0.886335
+  21430_hr (unknown): MSE (Reconstructed)=0.228319, Max_Diff (Reconstructed)=0.889531
+  10883_hr (unknown): MSE (Reconstructed)=0.399040, Max_Diff (Reconstructed)=0.920270
+  05923_hr (unknown): MSE (Reconstructed)=0.356397, Max_Diff (Reconstructed)=0.895200
+  00257_hr (unknown): MSE (Reconstructed)=0.319158, Max_Diff (Reconstructed)=0.937984
 
 
 Compression Level: 50_percent
@@ -44,35 +40,31 @@ Compression Level: 50_percent
 Sampling Rate: 100Hz
 ~~~~~~~~~~~~~~~~~~~~
 Number of samples: 5
-Average MSE: 0.056022
-MSE Range: 0.028390 - 0.125702
-Average Max Absolute Difference: 1.147429
-Compression Ratio: 95.0%
-Rank: 50
+Average MSE (Reconstructed): 0.285948
+MSE Range (Reconstructed): 0.158037 - 0.420296
+Average Max Absolute Difference (Reconstructed): 0.911598
 
 Individual Results:
-  10532 (MI): MSE=0.030081, Max_Diff=0.770874
-  10890 (MI): MSE=0.030973, Max_Diff=1.126924
-  00468 (CD): MSE=0.064962, Max_Diff=1.702710
-  00515 (MI): MSE=0.028390, Max_Diff=0.775623
-  00415 (CD): MSE=0.125702, Max_Diff=1.361014
+  05492_lr (unknown): MSE (Reconstructed)=0.158037, Max_Diff (Reconstructed)=0.925901
+  05174_lr (unknown): MSE (Reconstructed)=0.420296, Max_Diff (Reconstructed)=0.939493
+  20169_lr (unknown): MSE (Reconstructed)=0.165267, Max_Diff (Reconstructed)=0.887574
+  00239_lr (unknown): MSE (Reconstructed)=0.285419, Max_Diff (Reconstructed)=0.874539
+  20638_lr (unknown): MSE (Reconstructed)=0.400720, Max_Diff (Reconstructed)=0.930484
 
 
 Sampling Rate: 500Hz
 ~~~~~~~~~~~~~~~~~~~~
 Number of samples: 5
-Average MSE: 0.028557
-MSE Range: 0.012990 - 0.051254
-Average Max Absolute Difference: 0.914840
-Compression Ratio: 99.0%
-Rank: 50
+Average MSE (Reconstructed): 0.228378
+MSE Range (Reconstructed): 0.117932 - 0.319158
+Average Max Absolute Difference (Reconstructed): 0.892065
 
 Individual Results:
-  00506 (NORM): MSE=0.051254, Max_Diff=1.191123
-  00257 (MI): MSE=0.012990, Max_Diff=0.687954
-  10784 (STTC): MSE=0.039346, Max_Diff=1.160489
-  00234 (MI): MSE=0.019599, Max_Diff=0.767317
-  00234 (STTC): MSE=0.019599, Max_Diff=0.767317
+  14091_hr (unknown): MSE (Reconstructed)=0.297916, Max_Diff (Reconstructed)=0.929430
+  00506_hr (unknown): MSE (Reconstructed)=0.157985, Max_Diff (Reconstructed)=0.909684
+  15879_hr (unknown): MSE (Reconstructed)=0.117932, Max_Diff (Reconstructed)=0.796889
+  00257_hr (unknown): MSE (Reconstructed)=0.319158, Max_Diff (Reconstructed)=0.937984
+  10983_hr (unknown): MSE (Reconstructed)=0.248900, Max_Diff (Reconstructed)=0.886335
 
 
 Compression Level: 75_percent
@@ -81,34 +73,30 @@ Compression Level: 75_percent
 Sampling Rate: 100Hz
 ~~~~~~~~~~~~~~~~~~~~
 Number of samples: 5
-Average MSE: 0.066286
-MSE Range: 0.022483 - 0.167011
-Average Max Absolute Difference: 1.327432
-Compression Ratio: 97.5%
-Rank: 25
+Average MSE (Reconstructed): 0.267450
+MSE Range (Reconstructed): 0.165267 - 0.400720
+Average Max Absolute Difference (Reconstructed): 0.924430
 
 Individual Results:
-  00576 (STTC): MSE=0.167011, Max_Diff=1.780546
-  00468 (CD): MSE=0.036625, Max_Diff=1.366323
-  00415 (CD): MSE=0.068685, Max_Diff=1.081895
-  00468 (MI): MSE=0.036625, Max_Diff=1.366323
-  10890 (STTC): MSE=0.022483, Max_Diff=1.042074
+  10363_lr (unknown): MSE (Reconstructed)=0.293353, Max_Diff (Reconstructed)=0.926087
+  20169_lr (unknown): MSE (Reconstructed)=0.165267, Max_Diff (Reconstructed)=0.887574
+  20638_lr (unknown): MSE (Reconstructed)=0.400720, Max_Diff (Reconstructed)=0.930484
+  00568_lr (unknown): MSE (Reconstructed)=0.264550, Max_Diff (Reconstructed)=0.958087
+  15399_lr (unknown): MSE (Reconstructed)=0.213361, Max_Diff (Reconstructed)=0.919917
 
 
 Sampling Rate: 500Hz
 ~~~~~~~~~~~~~~~~~~~~
 Number of samples: 5
-Average MSE: 0.024241
-MSE Range: 0.009830 - 0.043766
-Average Max Absolute Difference: 0.829292
-Compression Ratio: 99.5%
-Rank: 25
+Average MSE (Reconstructed): 0.243125
+MSE Range (Reconstructed): 0.117932 - 0.356397
+Average Max Absolute Difference (Reconstructed): 0.890158
 
 Individual Results:
-  00234 (STTC): MSE=0.018985, Max_Diff=0.821768
-  10521 (MI): MSE=0.043766, Max_Diff=1.125570
-  10370 (MI): MSE=0.009830, Max_Diff=0.481673
-  10784 (STTC): MSE=0.029637, Max_Diff=0.895679
-  00234 (CD): MSE=0.018985, Max_Diff=0.821768
+  10983_hr (unknown): MSE (Reconstructed)=0.248900, Max_Diff (Reconstructed)=0.886335
+  05923_hr (unknown): MSE (Reconstructed)=0.356397, Max_Diff (Reconstructed)=0.895200
+  05823_hr (unknown): MSE (Reconstructed)=0.313052, Max_Diff (Reconstructed)=0.940638
+  15879_hr (unknown): MSE (Reconstructed)=0.117932, Max_Diff (Reconstructed)=0.796889
+  20107_hr (unknown): MSE (Reconstructed)=0.179343, Max_Diff (Reconstructed)=0.931729
 
 
