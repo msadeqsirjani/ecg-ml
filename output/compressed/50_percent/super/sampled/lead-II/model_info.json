@@ -1,0 +1,7 @@
+{
+    "compression_level": "50_percent",
+    "signal_type": "sampled",
+    "lead_config": "lead-II",
+    "model_type": "compressed_ecg",
+    "description": "Model trained on 50_percent compressed sampled ECG data"
+}

@@ -1,5 +1,0 @@
-{
-    "compression_level": "25_percent",
-    "model_type": "compressed_ecg",
-    "description": "Model trained on 25_percent compressed ECG data"
-}
