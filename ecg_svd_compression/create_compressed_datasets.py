@@ -17,6 +17,7 @@ import json
 from colorama import init, Fore, Style
 import time
 from datetime import datetime, timedelta
+from scipy.linalg import qr
 
 # Initialize colorama for Windows support
 init()
@@ -82,8 +83,17 @@ class ProcessingStats:
             print_info(f"  Success rate: {success_rate:.1f}%")
 
 # Configuration
-ORIGINAL_DATA_DIR = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\categorized'
-OUTPUT_BASE_DIR = r'C:\Users\NEWCOMER\Documents\UTSA\Independent Study\Lab3\data\compressed'
+ORIGINAL_DATA_DIR = r'/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/categorized'
+OUTPUT_BASE_DIR = r'/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/compressed'
+
+# SVD Compression Parameters
+SVD_PARAMS = {
+    'test_record': 'record_001',  # specific record ID to reconstruct
+    'sampling_rate': 500,         # 100Hz or 500Hz
+    'num_train_records': 100,     # amount of training data for SVD model
+    'rank': 25,                   # number of patterns/timestamps to keep
+    'superclass': 'HYP'          # classification type
+}
 
 # Compression levels (percentage of points to keep)
 COMPRESSION_LEVELS = {
@@ -92,9 +102,16 @@ COMPRESSION_LEVELS = {
     '75': {'percent': 75, 'name': '75_percent'}
 }
 
+# Processing configuration
+PROCESSING_CONFIG = {
+    'compression_to_create': 'all',  # Options: '25', '50', '75', 'all'
+    'data_dir': ORIGINAL_DATA_DIR,
+    'output_dir': OUTPUT_BASE_DIR
+}
+
 def sample_and_reconstruct_signal(signal, percent_to_keep):
     """
-    Sample signal points and reconstruct using interpolation.
+    Sample signal points using SVD-based compression.
     
     Args:
         signal: Original signal array
@@ -103,31 +120,52 @@ def sample_and_reconstruct_signal(signal, percent_to_keep):
     Returns:
         tuple: (sampled_signal, reconstructed_signal)
         - sampled_signal: Signal with only selected points (others set to 0)
-        - reconstructed_signal: Interpolated signal using the sampled points
+        - reconstructed_signal: Signal reconstructed using SVD
     """
     signal_length = len(signal)
-    num_points_to_keep = int(signal_length * (percent_to_keep / 100))
     
-    # Create evenly spaced indices for sampling
-    step = signal_length // num_points_to_keep
-    sample_indices = np.arange(0, signal_length, step)[:num_points_to_keep]
+    # Calculate rank based on percent_to_keep
+    if percent_to_keep == 25:
+        rank = 25  # 99.5% reduction
+    elif percent_to_keep == 50:
+        rank = 2500  # 50% reduction
+    else:  # 75%
+        rank = 3750  # 25% reduction
     
-    # Create sampled signal (zeros with only selected points)
+    # Ensure rank doesn't exceed signal length
+    rank = min(rank, signal_length - 1)
+    
+    # Reshape signal for SVD (add batch dimension)
+    signal_matrix = signal.reshape(1, -1)
+    
+    # Perform SVD
+    U, s, Vt = np.linalg.svd(signal_matrix, full_matrices=False)
+    
+    # Keep only top 'rank' components
+    U_reduced = U[:, :rank]
+    s_reduced = s[:rank]
+    Vt_reduced = Vt[:rank, :]
+    
+    # Create sampled signal (using sampling matrix)
+    sampling_matrix = np.zeros((rank, signal_length))
+    indices = np.linspace(0, signal_length-1, rank, dtype=int)
+    for i, idx in enumerate(indices):
+        sampling_matrix[i, idx] = 1.0
+    
     sampled_signal = np.zeros_like(signal)
-    sampled_signal[sample_indices] = signal[sample_indices]
+    sampled_signal[indices] = signal[indices]
     
-    # Create reconstructed signal using interpolation
-    # Get non-zero indices and values
-    valid_indices = sample_indices
-    valid_values = signal[valid_indices]
+    # Reconstruct signal using SVD components
+    reconstructed = (U_reduced @ np.diag(s_reduced) @ Vt_reduced)
+    reconstructed_signal = reconstructed.flatten()
     
-    # Create interpolation function
-    f = interp1d(valid_indices, valid_values, kind='cubic', 
-                 bounds_error=False, fill_value="extrapolate")
-    
-    # Generate reconstructed signal
-    all_indices = np.arange(signal_length)
-    reconstructed_signal = f(all_indices)
+    # Ensure output has the same length as input
+    if len(reconstructed_signal) != signal_length:
+        reconstructed_signal = np.interp(
+            np.linspace(0, len(reconstructed_signal)-1, signal_length),
+            np.arange(len(reconstructed_signal)),
+            reconstructed_signal
+        )
     
     return sampled_signal, reconstructed_signal
 
@@ -289,12 +327,13 @@ def create_compression_info_file(output_dir, compression_config):
         'compression_level': compression_config['name'],
         'percent_kept': compression_config['percent'],
         'sampling_rates': '100Hz and 500Hz',
-        'description': f"Sampling-based compression keeping {compression_config['percent']}% of points",
+        'description': f"SVD-based compression with {compression_config['percent']}% data retention",
         'original_dataset': ORIGINAL_DATA_DIR,
-        'compression_method': 'uniform sampling with cubic interpolation',
+        'compression_method': 'SVD with QR decomposition',
+        'svd_parameters': SVD_PARAMS,
         'versions': {
-            'sampled': 'Original signal with only sampled points (others set to zero)',
-            'reconstructed': 'Signal reconstructed using cubic interpolation'
+            'sampled': 'Original signal with SVD-based sampling',
+            'reconstructed': 'Signal reconstructed using SVD components'
         }
     }
     
@@ -308,33 +347,32 @@ def main():
     """Main function to process all compression levels."""
     print_header("ECG Dataset Compression Tool")
     
-    # Configuration
-    compression_to_create = 'all'  # Options: '25', '50', '75', 'all'
-    data_dir = ORIGINAL_DATA_DIR
-    output_dir = OUTPUT_BASE_DIR
-    
     start_time = time.time()
     
     try:
         # Check if original dataset exists
-        if not os.path.exists(data_dir):
-            print_error(f"Original dataset not found at {data_dir}")
+        if not os.path.exists(PROCESSING_CONFIG['data_dir']):
+            print_error(f"Original dataset not found at {PROCESSING_CONFIG['data_dir']}")
             return
         
         # Determine which compression levels to create
-        if compression_to_create == 'all':
+        if PROCESSING_CONFIG['compression_to_create'] == 'all':
             levels_to_create = COMPRESSION_LEVELS.keys()
         else:
-            levels_to_create = [compression_to_create]
+            levels_to_create = [PROCESSING_CONFIG['compression_to_create']]
         
         print_info("Configuration:")
-        print_info(f"  Data directory: {data_dir}")
-        print_info(f"  Output directory: {output_dir}")
+        print_info(f"  Data directory: {PROCESSING_CONFIG['data_dir']}")
+        print_info(f"  Output directory: {PROCESSING_CONFIG['output_dir']}")
         print_info(f"  Compression levels: {list(levels_to_create)}")
+        print_info(f"  SVD Parameters:")
+        for key, value in SVD_PARAMS.items():
+            print_info(f"    {key}: {value}")
         
         for level in levels_to_create:
             compression_config = COMPRESSION_LEVELS[level]
-            output_dataset_dir = os.path.join(output_dir, f"ptb-xl-{compression_config['name']}")
+            output_dataset_dir = os.path.join(PROCESSING_CONFIG['output_dir'], 
+                                            f"ptb-xl-{compression_config['name']}")
             
             print_header(f"Processing {compression_config['name']} Dataset")
             print_info(f"Keeping {compression_config['percent']}% of points")
@@ -344,7 +382,8 @@ def main():
             os.makedirs(output_dataset_dir, exist_ok=True)
             
             # Compress and save records
-            compress_and_save_records(data_dir, output_dataset_dir, compression_config)
+            compress_and_save_records(PROCESSING_CONFIG['data_dir'], 
+                                    output_dataset_dir, compression_config)
             
             # Copy metadata files
             copy_metadata_files(output_dataset_dir)
@@ -356,7 +395,7 @@ def main():
         
         print_header("Processing Complete")
         print_success("All compressed datasets created successfully!")
-        print_info(f"Output location: {output_dir}")
+        print_info(f"Output location: {PROCESSING_CONFIG['output_dir']}")
         
     except Exception as e:
         print_error(f"An error occurred during processing: {str(e)}")
