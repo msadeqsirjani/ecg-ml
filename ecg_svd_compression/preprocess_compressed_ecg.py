@@ -16,6 +16,7 @@ from datetime import datetime
 import sys
 import os
 from sklearn.preprocessing import MultiLabelBinarizer
+from colorama import init, Back, Fore, Style
 
 
 class CompressedECGPreprocessor:
@@ -23,12 +24,15 @@ class CompressedECGPreprocessor:
 
     LEAD_CONFIGS = {
         "lead-I": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        "lead-II": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
         "bipolar-limb": [3, 4, 5, 6, 7, 8, 9, 10, 11],
         "unipolar-limb": [0, 1, 2, 6, 7, 8, 9, 10, 11],
         "limb-leads": [6, 7, 8, 9, 10, 11],
         "precordial-leads": [0, 1, 2, 3, 4, 5],
         "all-leads": [],  # Empty list means use all leads
     }
+
+    SIGNAL_TYPES = ["sampled", "reconstructed"]
 
     def __init__(
         self,
@@ -37,7 +41,8 @@ class CompressedECGPreprocessor:
         sampling_rate: int = 500,
         classification_type: str = "super",
         test_fold: int = 10,
-        compression_level: str = "25_percent"
+        compression_level: str = "25_percent",
+        signal_type: str = "reconstructed"  # New parameter
     ):
         """Initialize ECG preprocessor with logging configuration."""
         self.data_path = Path(data_path)
@@ -46,6 +51,7 @@ class CompressedECGPreprocessor:
         self.classification_type = classification_type
         self.test_fold = test_fold
         self.compression_level = compression_level
+        self.signal_type = signal_type  # Add signal type
         self.label_binarizer = MultiLabelBinarizer()
 
         # Setup logging
@@ -62,7 +68,8 @@ class CompressedECGPreprocessor:
             f"classification_type={classification_type}, "
             f"sampling_rate={sampling_rate}, "
             f"test_fold={test_fold}, "
-            f"compression_level={compression_level}"
+            f"compression_level={compression_level}, "
+            f"signal_type={signal_type}"
         )
 
     def _setup_logging(self):
@@ -73,10 +80,10 @@ class CompressedECGPreprocessor:
 
         # Create unique log filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = log_dir / f"preprocessing_compressed_{self.compression_level}_{self.classification_type}_{timestamp}.log"
+        log_file = log_dir / f"preprocessing_compressed_{self.compression_level}_{self.signal_type}_{self.classification_type}_{timestamp}.log"
 
         # Configure logger
-        self.logger = logging.getLogger(f"CompressedECGPreprocessor_{self.compression_level}_{self.classification_type}")
+        self.logger = logging.getLogger(f"CompressedECGPreprocessor_{self.compression_level}_{self.signal_type}_{self.classification_type}")
         self.logger.setLevel(logging.DEBUG)
 
         # File handler
@@ -98,11 +105,11 @@ class CompressedECGPreprocessor:
         self.logger.addHandler(console_handler)
 
     def _setup_output_directories(self):
-        """Create output directory structure for each lead configuration."""
+        """Create output directory structure for each lead configuration and signal type."""
         try:
             self.output_path.mkdir(parents=True, exist_ok=True)
             for lead_config in self.LEAD_CONFIGS.keys():
-                (self.output_path / lead_config).mkdir(exist_ok=True)
+                (self.output_path / self.signal_type / lead_config).mkdir(parents=True, exist_ok=True)
             self.logger.info(f"Created output directories at {self.output_path}")
         except Exception as e:
             self.logger.error(f"Failed to create output directories: {str(e)}")
@@ -128,18 +135,22 @@ class CompressedECGPreprocessor:
             self.logger.error(f"Invalid compression level: {self.compression_level}")
             raise ValueError("Invalid compression level")
 
+        if self.signal_type not in self.SIGNAL_TYPES:
+            self.logger.error(f"Invalid signal type: {self.signal_type}")
+            raise ValueError(f"Signal type must be one of {self.SIGNAL_TYPES}")
+
         self.logger.debug("Input validation successful")
 
     def find_compressed_records(self) -> list:
         """Find all compressed records in the flattened directory structure."""
-        self.logger.info("Finding compressed records in flattened structure...")
+        self.logger.info(f"Finding {self.signal_type} records in flattened structure...")
         
         records = []
         record_prefix = "lr" if self.sampling_rate == 100 else "hr"
         
         # Path to compressed dataset
         compressed_path = self.data_path / f"ptb-xl-{self.compression_level}"
-        records_dir = compressed_path / f"records{self.sampling_rate}"
+        records_dir = compressed_path / self.signal_type / f"records{self.sampling_rate}"
         
         if not records_dir.exists():
             self.logger.error(f"Records directory not found: {records_dir}")
@@ -155,15 +166,15 @@ class CompressedECGPreprocessor:
             
             for record_file in record_files:
                 record_id = record_file.stem.replace(f"_{record_prefix}", "")
-                record_path = str(record_file.parent / f"{record_id}_{record_prefix}")
+                record_path = str(record_file.parent / record_file.stem)
                 
                 records.append({
                     'ecg_id': int(record_id),
-                    'filename': f"records{self.sampling_rate}/{dir_path.name}/{record_id}_{record_prefix}",
+                    'filename': f"{self.signal_type}/records{self.sampling_rate}/{dir_path.name}/{record_file.stem}",
                     'record_path': record_path
                 })
         
-        self.logger.info(f"Found {len(records)} compressed records")
+        self.logger.info(f"Found {len(records)} {self.signal_type} records")
         return records
 
     def load_raw_data(self, df: pd.DataFrame) -> np.ndarray:
@@ -380,14 +391,14 @@ class CompressedECGPreprocessor:
             "processing_timestamp": datetime.now().isoformat()
         }
 
-        with open(self.output_path / lead_config / "metadata.json", "w") as f:
+        with open(self.output_path / self.signal_type / lead_config / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
     def process_lead_configuration(
         self, X: np.ndarray, Y: pd.DataFrame, lead_config: str
     ):
         """Process data for a specific lead configuration."""
-        self.logger.info(f"Processing {lead_config} configuration...")
+        self.logger.info(f"Processing {lead_config} configuration for {self.signal_type} signals...")
 
         try:
             # Split data
@@ -407,9 +418,9 @@ class CompressedECGPreprocessor:
             y_train = self.process_labels(y_train)
             y_test = self.process_labels(y_test)
 
-            # Save data
-            output_dir = self.output_path / lead_config
-            self.logger.info(f"Saving processed data to {output_dir}")
+            # Save data in signal type specific directory
+            output_dir = self.output_path / self.signal_type / lead_config
+            self.logger.info(f"Saving processed {self.signal_type} data to {output_dir}")
 
             np.save(output_dir / "x_train.npy", X_train)
             np.save(output_dir / "x_test.npy", X_test)
@@ -443,7 +454,7 @@ class CompressedECGPreprocessor:
             Y: Optional pre-loaded annotations
         """
         self.logger.info(
-            f"Starting preprocessing pipeline for {self.compression_level} compressed dataset with {self.classification_type} classification"
+            f"Starting preprocessing pipeline for {self.compression_level} {self.signal_type} dataset with {self.classification_type} classification"
         )
 
         try:
@@ -476,74 +487,89 @@ class CompressedECGPreprocessor:
 def main():
     """Main function to process all compression levels, sampling rates, and classification types."""
     try:
+        # Initialize colorama
+        init()
+
         # Configuration with absolute paths
         base_path = Path("/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/compressed")
         output_base_path = Path("/Users/sadegh/Documents/UTSA/Spring 2025/Independent Study/Lab3/data/processed/ptb-xl-compressed")
         sampling_rates = [100]  # Only process 100Hz
         classification_types = ["binary", "super", "sub"]
         compression_levels = ["25_percent", "50_percent", "75_percent"]
+        signal_types = ["sampled", "reconstructed"]
 
-        print("Starting preprocessing of compressed datasets...")
-        print(f"Base path: {base_path}")
-        print(f"Output path: {output_base_path}")
-        print(f"Sampling rates: {sampling_rates}")
-        print(f"Classification types: {classification_types}")
-        print(f"Compression levels: {compression_levels}")
+        # Print header with colors
+        print(f"\n{Back.GREEN}{Fore.BLACK} ECG Dataset Preprocessing Pipeline {Style.RESET_ALL}")
+        print("=" * 40)
+        print(f"{Fore.CYAN}Base path: {Style.RESET_ALL}{base_path}")
+        print(f"{Fore.CYAN}Output path: {Style.RESET_ALL}{output_base_path}")
+        print(f"{Fore.CYAN}Sampling rates: {Style.RESET_ALL}{sampling_rates}")
+        print(f"{Fore.CYAN}Classification types: {Style.RESET_ALL}{classification_types}")
+        print(f"{Fore.CYAN}Compression levels: {Style.RESET_ALL}{compression_levels}")
+        print(f"{Fore.CYAN}Signal types: {Style.RESET_ALL}{signal_types}")
+        print("=" * 40)
 
         # Process each combination
         for level in compression_levels:
+            print(f"\n{Back.BLUE}{Fore.WHITE} Processing Compression Level: {level} {Style.RESET_ALL}")
+            
             for sampling_rate in sampling_rates:
-                # Load data once for all classification types
-                print(f"\nLoading data for {level} at {sampling_rate}Hz...")
+                print(f"\n{Fore.YELLOW}Processing {sampling_rate}Hz signals{Style.RESET_ALL}")
                 
-                # Initialize base preprocessor to load data
-                base_preprocessor = CompressedECGPreprocessor(
-                    data_path=base_path,
-                    output_path=output_base_path / level / "base",
-                    sampling_rate=sampling_rate,
-                    classification_type="super",  # Doesn't matter for loading
-                    compression_level=level,
-                )
-
-                try:
-                    # Load raw data and annotations once
-                    Y, agg_df = base_preprocessor.load_annotations()
-                    X = base_preprocessor.load_raw_data(Y)
-                    base_preprocessor.logger.info(
-                        f"Data loading completed for {level} at {sampling_rate}Hz. Starting processing for each classification type..."
+                for signal_type in signal_types:
+                    print(f"\n{Back.MAGENTA}{Fore.WHITE} Processing {level} {signal_type} signals at {sampling_rate}Hz {Style.RESET_ALL}")
+                    
+                    # Initialize base preprocessor to load data
+                    base_preprocessor = CompressedECGPreprocessor(
+                        data_path=base_path,
+                        output_path=output_base_path / level / "base",
+                        sampling_rate=sampling_rate,
+                        classification_type="super",  # Doesn't matter for loading
+                        compression_level=level,
+                        signal_type=signal_type,
                     )
 
-                    # Process for each classification type using the loaded data
-                    for classification_type in classification_types:
-                        try:
-                            print(f"Processing {level} at {sampling_rate}Hz with {classification_type} classification...")
+                    try:
+                        # Load raw data and annotations once
+                        print(f"{Fore.CYAN}Loading data and annotations...{Style.RESET_ALL}")
+                        Y, agg_df = base_preprocessor.load_annotations()
+                        X = base_preprocessor.load_raw_data(Y)
+                        print(f"{Fore.GREEN}✓ Data loading completed{Style.RESET_ALL}")
 
-                            preprocessor = CompressedECGPreprocessor(
-                                data_path=base_path,
-                                output_path=output_base_path / level / classification_type,
-                                sampling_rate=sampling_rate,
-                                classification_type=classification_type,
-                                compression_level=level,
-                            )
+                        # Process for each classification type using the loaded data
+                        for classification_type in classification_types:
+                            try:
+                                print(f"\n{Fore.CYAN}Processing {level} {signal_type} at {sampling_rate}Hz with {classification_type} classification...{Style.RESET_ALL}")
 
-                            # Set the aggregation dataframe
-                            preprocessor.set_agg_df(agg_df)
+                                preprocessor = CompressedECGPreprocessor(
+                                    data_path=base_path,
+                                    output_path=output_base_path / level / classification_type,
+                                    sampling_rate=sampling_rate,
+                                    classification_type=classification_type,
+                                    compression_level=level,
+                                    signal_type=signal_type,
+                                )
 
-                            # Skip data loading and use the already loaded data
-                            preprocessor.preprocess(X=X, Y=Y)
+                                # Set the aggregation dataframe
+                                preprocessor.set_agg_df(agg_df)
 
-                        except Exception as e:
-                            print(f"Failed to process {level} at {sampling_rate}Hz with {classification_type}: {str(e)}")
-                            continue
+                                # Skip data loading and use the already loaded data
+                                preprocessor.preprocess(X=X, Y=Y)
+                                print(f"{Fore.GREEN}✓ Successfully processed {classification_type} classification{Style.RESET_ALL}")
 
-                except Exception as e:
-                    print(f"Failed to load data for {level} at {sampling_rate}Hz: {str(e)}")
-                    continue
+                            except Exception as e:
+                                print(f"{Fore.RED}✗ Failed to process {level} {signal_type} at {sampling_rate}Hz with {classification_type}: {str(e)}{Style.RESET_ALL}")
+                                continue
 
-        print("\nAll preprocessing completed!")
+                    except Exception as e:
+                        print(f"{Fore.RED}✗ Failed to load data for {level} {signal_type} at {sampling_rate}Hz: {str(e)}{Style.RESET_ALL}")
+                        continue
+
+        print(f"\n{Back.GREEN}{Fore.BLACK} All preprocessing completed! {Style.RESET_ALL}")
+        print(f"{Fore.CYAN}Processed data saved in: {Style.RESET_ALL}{output_base_path}\n")
 
     except Exception as e:
-        print(f"Failed to initialize preprocessing: {str(e)}")
+        print(f"{Back.RED}{Fore.WHITE} Error: Failed to initialize preprocessing: {str(e)} {Style.RESET_ALL}")
 
 
 if __name__ == "__main__":
